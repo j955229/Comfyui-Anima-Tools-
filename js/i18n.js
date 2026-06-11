@@ -93,6 +93,27 @@ const TRANSLATIONS = {
     "Edit Nickname / Note": "Edit Nickname / Note",
     "Enter a nickname or descriptive note...": "Enter a nickname or descriptive note...",
     "Save": "Save",
+    "Open LoRA Selector": "Open LoRA Selector",
+    "Anima Multi LoRA Loader": "Anima Multi LoRA Loader",
+    "Search Anima LoRAs...": "Search Anima LoRAs...",
+    "Selected: {count} LoRAs": "Selected: {count} LoRAs",
+    "Download & Add": "Download & Add",
+    "Add": "Add",
+    "Downloading... {progress}%": "Downloading... {progress}%",
+    "Download Failed": "Download Failed",
+    "Download Successful": "Download Successful",
+    "Already Added": "Already Added",
+    "Save Path": "Save Path",
+    "Save Path Config": "Save Path Config",
+    "Enter absolute directory path...": "Enter absolute directory path...",
+    "Path saved successfully": "Path saved successfully",
+    "Civitai API Key Config": "Civitai API Key Config",
+    "Enter Civitai API Key...": "Enter Civitai API Key...",
+    "Configure Folder": "Configure Folder",
+    "Anima LoRA Selector": "Anima LoRA Selector",
+    "No Anima LoRAs found": "No Anima LoRAs found",
+    "Refresh": "Refresh",
+    "Clear Cache": "Clear Cache",
   },
   zh: {
     "Open Artist Selector": "打开画师选择器",
@@ -186,13 +207,40 @@ const TRANSLATIONS = {
     "Edit Nickname / Note": "编辑自定义昵称/备注",
     "Enter a nickname or descriptive note...": "输入自定义昵称或备注小记...",
     "Save": "保存",
+    "Open LoRA Selector": "打开 LoRA 选择器",
+    "Anima Multi LoRA Loader": "Anima 多 LoRA 加载器",
+    "Search Anima LoRAs...": "搜索 Anima LoRA 名称...",
+    "Selected: {count} LoRAs": "已选择: {count} 个 LoRA",
+    "Download & Add": "下载并添加",
+    "Add": "添加",
+    "Downloading... {progress}%": "下载中... {progress}%",
+    "Download Failed": "下载失败",
+    "Download Successful": "下载成功",
+    "Already Added": "已添加",
+    "Save Path": "保存目录",
+    "Save Path Config": "下载保存路径配置",
+    "Enter absolute directory path...": "请输入存放 LoRA 模型的绝对路径...",
+    "Path saved successfully": "保存成功",
+    "Civitai API Key Config": "Civitai API Key 配置",
+    "Enter Civitai API Key...": "请输入你的 Civitai API Key...",
+    "Configure Folder": "配置目录",
+    "Anima LoRA Selector": "Anima LoRA 选择器",
+    "No Anima LoRAs found": "未找到相关的 Anima LoRA",
+    "Refresh": "刷新",
+    "Clear Cache": "清除缓存",
   }
 };
 
 function getLanguage() {
-  const locale = String(app.ui.settings.getSettingValue("Comfy.Locale") || "").toLowerCase();
-  if (locale.includes("zh-tw") || locale.includes("zh-hant")) return "zh";
-  if (locale.includes("zh")) return "zh";
+  try {
+    if (app && app.ui && app.ui.settings && typeof app.ui.settings.getSettingValue === "function") {
+      const locale = String(app.ui.settings.getSettingValue("Comfy.Locale") || "").toLowerCase();
+      if (locale.includes("zh-tw") || locale.includes("zh-hant")) return "zh";
+      if (locale.includes("zh")) return "zh";
+    }
+  } catch (e) {
+    console.warn("[Anima Tools] Early language check failed, fallback to en", e);
+  }
   return "en";
 }
 
