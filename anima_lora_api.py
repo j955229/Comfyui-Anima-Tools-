@@ -181,14 +181,44 @@ def _post_json_url(url: str, body: dict, api_key: str | None = None, timeout: in
         return None
 
 
-def _meili_sort_for_civitai_sort(sort: str) -> list[str]:
+def _official_sort_value(sort: str) -> str:
     mapping = {
-        "Highest Rated": ["metrics.thumbsUpCount:desc"],
-        "Most Downloaded": ["metrics.downloadCount:desc"],
-        "Most Liked": ["metrics.favoriteCount:desc"],
-        "Newest": ["createdAt:desc"],
+        "Relevancy": "models_v9",
+        "Highest Rated": "models_v9:metrics.thumbsUpCount:desc",
+        "Most Downloaded": "models_v9:metrics.downloadCount:desc",
+        "Most Liked": "models_v9:metrics.favoriteCount:desc",
+        "Most Discussed": "models_v9:metrics.commentCount:desc",
+        "Most Collected": "models_v9:metrics.collectedCount:desc",
+        "Most Buzz": "models_v9:metrics.tippedAmountCount:desc",
+        "Newest": "models_v9:createdAt:desc",
     }
-    return mapping.get(str(sort or "").strip(), mapping["Highest Rated"])
+    clean_sort = str(sort or "").strip()
+    if clean_sort.startswith("models_v9"):
+        return clean_sort
+    return mapping.get(clean_sort, "models_v9")
+
+
+def _meili_sort_for_civitai_sort(sort: str) -> tuple[str, list[str]]:
+    official_sort = _official_sort_value(sort)
+    parts = official_sort.split(":")
+    index_uid = parts[0] or "models_v9"
+    sort_rules = [":".join(parts[1:])] if len(parts) > 1 else []
+    return index_uid, sort_rules
+
+
+def _public_api_sort_for_civitai_sort(sort: str) -> str:
+    mapping = {
+        "models_v9": "Highest Rated",
+        "models_v9:metrics.thumbsUpCount:desc": "Highest Rated",
+        "models_v9:metrics.downloadCount:desc": "Most Downloaded",
+        "models_v9:metrics.favoriteCount:desc": "Most Liked",
+        "models_v9:metrics.commentCount:desc": "Most Discussed",
+        "models_v9:metrics.collectedCount:desc": "Most Collected",
+        "models_v9:metrics.tippedAmountCount:desc": "Most Buzz",
+        "models_v9:createdAt:desc": "Newest",
+    }
+    official_sort = _official_sort_value(sort)
+    return mapping.get(official_sort, str(sort or "Highest Rated"))
 
 
 def _quote_meili_value(value: str) -> str:
@@ -279,6 +309,7 @@ def _convert_meili_hit(hit: dict) -> dict:
         "id": hit.get("id"),
         "name": hit.get("name") or "Unnamed Model",
         "type": hit.get("type") or "LORA",
+        "description": hit.get("description") or hit.get("descriptionHtml") or hit.get("descriptionPlaintext") or "",
         "creator": {
             "username": user.get("username") or "Unknown",
             "image": user.get("image"),
@@ -314,19 +345,24 @@ def _search_civitai_loras_meili(query: str, tag: str, category: str, sort: str, 
     if clean_tag:
         filters.append(f"tags.name = {_quote_meili_value(clean_tag)}")
 
+    index_uid, sort_rules = _meili_sort_for_civitai_sort(sort)
+    query_payload = {
+        "indexUid": index_uid,
+        "q": str(query or "").strip(),
+        "filter": filters,
+        "limit": max(1, min(limit, 100)),
+        "offset": offset,
+        "attributesToRetrieve": [
+            "id", "name", "type", "metrics", "user", "category", "version",
+            "versions", "fileFormats", "triggerWords", "images",
+            "description", "descriptionHtml", "descriptionPlaintext"
+        ],
+    }
+    if sort_rules:
+        query_payload["sort"] = sort_rules
+
     body = {
-        "queries": [{
-            "indexUid": "models_v9",
-            "q": str(query or "").strip(),
-            "filter": filters,
-            "sort": _meili_sort_for_civitai_sort(sort),
-            "limit": max(1, min(limit, 100)),
-            "offset": offset,
-            "attributesToRetrieve": [
-                "id", "name", "type", "metrics", "user", "category", "version",
-                "versions", "fileFormats", "triggerWords", "images"
-            ],
-        }]
+        "queries": [query_payload]
     }
     result = _post_json_url(
         f"{CIVITAI_SEARCH_HOST}/multi-search",
@@ -360,8 +396,9 @@ def search_civitai_loras(
     limit: int = 40,
 ) -> dict | None:
     """Searches Civitai API for LoRA models based on Anima."""
-    if str(category or "").strip():
-        return _search_civitai_loras_meili(query, tag, category, sort, cursor, limit)
+    meili_result = _search_civitai_loras_meili(query, tag, category, sort, cursor, limit)
+    if meili_result is not None:
+        return meili_result
 
     config = load_config()
     api_key = config.get("civitai_api_key", "").strip() or None
@@ -369,7 +406,7 @@ def search_civitai_loras(
     params = {
         "limit": str(max(1, min(limit, 100))),
         "types": "LORA",
-        "sortBy": sort,
+        "sortBy": _public_api_sort_for_civitai_sort(sort),
         "nsfw": "true",
         "baseModels": "Anima",  # Enforce matching Anima base model only
     }

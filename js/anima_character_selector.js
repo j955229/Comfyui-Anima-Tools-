@@ -50,8 +50,9 @@ app.registerExtension({
 async function openCharacterSelectorModal(node, tagsWidget) {
     // 1. 解析当前节点中已经选中的 tags
     const currentTagsText = tagsWidget.value || "";
+    const normalizedCurrentTagsText = currentTagsText.replace(/_raw_:/g, "");
     const selectedCharacters = new Set(
-        currentTagsText.split(",")
+        normalizedCurrentTagsText.split(",")
             .map(t => t.trim())
             .filter(t => t.length > 0)
     );
@@ -84,7 +85,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
     // 匹配已经勾选的自定义项
     favoriteItems.forEach(fi => {
-        if (fi.isCustom && fi.customContent && currentTagsText.includes(fi.customContent.trim())) {
+        if (fi.isCustom && fi.customContent && normalizedCurrentTagsText.includes(fi.customContent.trim())) {
             selectedCharacters.add(fi.name);
         }
     });
@@ -1283,7 +1284,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                 subTags.forEach(st => {
                     const stClean = st.strip ? st.strip() : st.trim();
                     if (stClean) {
-                        resultTags.push(`_raw_:${stClean}`);
+                        resultTags.push(stClean);
                     }
                 });
             } else {

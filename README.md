@@ -1,4 +1,4 @@
-# Anima-Tools: ComfyUI Premium Artist & Character Visual Selector 🎨
+# Anima-Tools: ComfyUI Premium Artist, Character & LoRA Visual Selector 🎨
 
 <p align="center">
   <img src="https://img.shields.io/github/v/release/nregret/Comfyui-Anima-Tools?color=ff69b4&style=flat-square" alt="Release">
@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <strong>专为 ComfyUI 设计的高性能、多维度二次元画师与角色视觉选择套件</strong>
+  <strong>专为 ComfyUI 设计的高性能、多维度二次元画师、角色与 Anima LoRA 视觉选择套件</strong>
 </p>
 
 <p align="center">
-  Anima-Tools 是一款专为二次元（Anime）AI 绘画量身打造的 ComfyUI 视觉提示词辅助套件。它深度融合了庞大的画师风格库与精细的动漫角色图鉴，提供直观的视觉交互面板，帮助创作者以极高的自由度与精确度构建脑海中的二次元画面。
+  Anima-Tools 是一款专为二次元（Anime）AI 绘画量身打造的 ComfyUI 视觉提示词与 Anima LoRA 辅助套件。它深度融合了庞大的画师风格库、精细的动漫角色图鉴与 Civitai LoRA 搜索下载面板，帮助创作者以极高的自由度与精确度构建脑海中的二次元画面。
 </p>
 
 ---
@@ -23,15 +23,32 @@
 > [!NOTE]
 > 以下为本套件实际运行时的交互界面截图。安装后即可在 ComfyUI 中获得完全一致的视觉交互体验。
 
-| 🎨 画师风格选择面板 (Artist Style Selector Panel) | 🎭 角色属性图鉴面板 (Character Tag Selector Panel) |
-| :---: | :---: |
-| ![Anima Artist Style Selector UI Preview](./img/artist.jpeg) <br> *图 1. 4万+画师风格库预览，支持独特度与作品数检索排序* | ![Anima Character Selector UI Preview](./img/character.jpeg) <br> *图 2. 多维属性动漫角色图鉴，支持发色、瞳色与同人热度多维交叉过滤* |
-
-<p align="center">
-  <strong>⚙️ ComfyUI 节点示意图 (Workflow & Node Layout)</strong><br>
-  <img src="./img/nodes.jpeg" alt="ComfyUI Node Layout Preview" width="80%">
-  <br><em>图 3. 标准版与 Plus 版节点拼装工作流示意图</em>
-</p>
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <strong>🎨 画师风格选择面板 (Artist Style Selector Panel)</strong><br>
+      <img src="./img/artist.jpeg" alt="Anima Artist Style Selector UI Preview"><br>
+      <em>图 1. 4万+画师风格库预览，支持独特度与作品数检索排序</em>
+    </td>
+    <td align="center" width="50%">
+      <strong>🎭 角色属性图鉴面板 (Character Tag Selector Panel)</strong><br>
+      <img src="./img/character.jpeg" alt="Anima Character Selector UI Preview"><br>
+      <em>图 2. 多维属性动漫角色图鉴，支持发色、瞳色与同人热度多维交叉过滤</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <strong>🧩 Anima LoRA 加载面板 (Anima LoRA Loader Panel)</strong><br>
+      <img src="./img/lora.jpeg" alt="Anima LoRA Loader UI Preview"><br>
+      <em>图 3. Anima LoRA 搜索、预览、下载、收藏、已加载管理与持久缩略图缓存面板</em>
+    </td>
+    <td align="center" width="50%">
+      <strong>⚙️ ComfyUI 节点示意图 (Workflow & Node Layout)</strong><br>
+      <img src="./img/nodes.jpeg" alt="ComfyUI Node Layout Preview"><br>
+      <em>图 4. 标准版、Plus 版与 Anima Multi LoRA Loader 节点拼装工作流示意图</em>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -120,8 +137,8 @@
     *   `separator` (String): 智能防错连接符。
 
 ### 3. 🧩 Anima Multi LoRA Loader (多 LoRA 加载器)
-*   `model` / `clip`: ComfyUI 标准模型与 CLIP 输入。
-*   `lora_list_json` (String): 前端 LoRA 选择器维护的 LoRA 列表，包含文件名、启用状态、模型强度与 CLIP 强度。
+*   `model`: ComfyUI 标准模型输入。
+*   `lora_list_json` (String): 前端 LoRA 选择器维护的 LoRA 列表，包含文件名、启用状态与模型强度。
 *   前端面板支持本地 LoRA 预览、Civitai 搜索、下载进度、收藏、持久缩略图缓存与快速二次打开。
 
 ---

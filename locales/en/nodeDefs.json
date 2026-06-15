@@ -99,18 +99,13 @@
         "name": "Model",
         "tooltip": "The base model to apply selected LoRAs to."
       },
-      "clip": {
-        "name": "CLIP",
-        "tooltip": "The CLIP instance to apply selected LoRAs to."
-      },
       "lora_list_json": {
         "name": "LoRA List",
-        "tooltip": "JSON data maintained by the visual LoRA selector, including filenames and strengths."
+        "tooltip": "JSON data maintained by the visual LoRA selector, including filenames and model strengths."
       }
     },
     "outputs": {
-      "0": { "name": "MODEL" },
-      "1": { "name": "CLIP" }
+      "0": { "name": "MODEL" }
     }
   }
 }

@@ -46,6 +46,20 @@ app.registerExtension({
                 origOnConfigure?.apply(this, arguments);
                 hideJsonWidgetFully(this);
             };
+
+            const origOnResize = nodeType.prototype.onResize;
+            nodeType.prototype.onResize = function () {
+                const result = origOnResize?.apply(this, arguments);
+                updateLoraWidgetLabels(this);
+                return result;
+            };
+
+            const origOnDrawForeground = nodeType.prototype.onDrawForeground;
+            nodeType.prototype.onDrawForeground = function () {
+                const result = origOnDrawForeground?.apply(this, arguments);
+                updateLoraWidgetLabelsIfNeeded(this);
+                return result;
+            };
         }
     }
 });
@@ -74,11 +88,82 @@ function hideJsonWidgetFully(node) {
     }
 }
 
+function normalizeLoraEntry(lora) {
+    if (!lora || !lora.name) return null;
+    return {
+        name: lora.name,
+        strength_model: Number.isFinite(Number(lora.strength_model)) ? Number(lora.strength_model) : 1.0,
+        enabled: lora.enabled !== false
+    };
+}
+
+function normalizeLoraList(loras) {
+    return (Array.isArray(loras) ? loras : []).map(normalizeLoraEntry).filter(Boolean);
+}
+
+function getLoraBaseName(name) {
+    let displayName = String(name || "");
+    if (displayName.endsWith(".safetensors")) {
+        displayName = displayName.slice(0, -12);
+    }
+    const lastSlash = Math.max(displayName.lastIndexOf("/"), displayName.lastIndexOf("\\"));
+    if (lastSlash !== -1) {
+        displayName = displayName.substring(lastSlash + 1);
+    }
+    return displayName || "LoRA";
+}
+
+function truncateForWidth(text, maxChars) {
+    if (text.length <= maxChars) return text;
+    if (maxChars <= 8) return text.slice(0, Math.max(1, maxChars - 1)) + "...";
+    const head = Math.ceil((maxChars - 3) * 0.68);
+    const tail = Math.max(0, maxChars - 3 - head);
+    return `${text.slice(0, head)}...${tail > 0 ? text.slice(-tail) : ""}`;
+}
+
+function getAdaptiveLoraName(name, nodeWidth) {
+    const fullName = getLoraBaseName(name);
+    const width = Math.max(180, Number(nodeWidth || 240));
+    const maxChars = Math.max(12, Math.floor((width - 70) / 7));
+    return truncateForWidth(fullName, maxChars);
+}
+
+function getDeleteWidgetName(name, nodeWidth) {
+    return `×  ${getAdaptiveLoraName(name, nodeWidth)}`;
+}
+
+function updateLoraWidgetLabels(node) {
+    if (!node?.widgets) return;
+    const width = node.size ? node.size[0] : 240;
+    let changed = false;
+    for (const widget of node.widgets) {
+        if (widget?.__animaWidgetType === "delete_lora") {
+            const nextName = getDeleteWidgetName(widget.__animaLoraName, width);
+            if (widget.name !== nextName) {
+                widget.name = nextName;
+                changed = true;
+            }
+        }
+    }
+    node._animaLastLoraWidgetWidth = width;
+    if (changed) {
+        node.setDirtyCanvas?.(true, true);
+    }
+}
+
+function updateLoraWidgetLabelsIfNeeded(node) {
+    const width = node?.size ? node.size[0] : 0;
+    if (!width || Math.abs(width - (node._animaLastLoraWidgetWidth || 0)) < 8) return;
+    updateLoraWidgetLabels(node);
+}
+
 // Dynamic widget synchronization
 function syncLoraWidgets(node, loras) {
     try {
         // 1. Record current width before any widgets change
         const currentWidth = node.size ? node.size[0] : 0;
+        loras = normalizeLoraList(loras);
+        node._loraData = loras;
 
         // 2. Physically remove all previous dynamic widgets matching certain prefixes or names
         if (node.widgets) {
@@ -87,9 +172,12 @@ function syncLoraWidgets(node, loras) {
                 if (w && w.name) {
                     const wName = typeof w.name === "string" ? w.name : String(w.name);
                     if (
+                        w.__animaWidgetType ||
                         wName.startsWith("❌") || 
+                        wName.startsWith("×") ||
                         wName.includes("Model Str") || 
                         wName.includes("Clip Str") || 
+                        wName.includes("Strength") ||
                         wName === t("Open LoRA Selector") ||
                         wName === "Open LoRA Selector"
                     ) {
@@ -108,60 +196,42 @@ function syncLoraWidgets(node, loras) {
             const lora = loras[i];
             if (!lora || !lora.name) continue;
 
-            // Button to remove the LoRA (Truncate display name to prevent node border overflow)
-            let displayName = lora.name;
-            if (displayName.endsWith(".safetensors")) {
-                displayName = displayName.slice(0, -12);
-            }
-            const lastSlash = Math.max(displayName.lastIndexOf("/"), displayName.lastIndexOf("\\"));
-            if (lastSlash !== -1) {
-                displayName = displayName.substring(lastSlash + 1);
-            }
-            const maxLen = 22;
-            if (displayName.length > maxLen) {
-                displayName = displayName.substring(0, maxLen - 3) + "...";
-            }
-
-            const delBtn = node.addWidget("button", `❌ ${displayName}`, null, () => {
+            const delBtn = node.addWidget("button", getDeleteWidgetName(lora.name, currentWidth), null, () => {
                 const nextLoras = node._loraData.filter(x => x.name !== lora.name);
                 node._loraData = nextLoras;
                 updateJsonValue(node);
                 syncLoraWidgets(node, nextLoras);
             });
+            delBtn.__animaWidgetType = "delete_lora";
+            delBtn.__animaLoraName = lora.name;
             delBtn.computedHeight = 24;
             if (delBtn.el) {
                 delBtn.el.style.cssText += `
                     color: #ef4444 !important;
-                    border: 1px solid rgba(239, 68, 68, 0.2) !important;
-                    background: rgba(239, 68, 68, 0.05) !important;
+                    border: 1px solid rgba(239, 68, 68, 0.32) !important;
+                    background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.12)) !important;
+                    border-radius: 7px !important;
                     font-size: 11px !important;
                     text-align: left !important;
-                    padding-left: 8px !important;
+                    padding-left: 10px !important;
                     margin-top: 4px !important;
+                    font-weight: 650 !important;
                 `;
+                delBtn.el.title = `Remove ${lora.name}`;
             }
             node._dynamicWidgets.push(delBtn);
 
             // Use zero-width space (\u200B) repeat sequence as unique suffix to prevent LiteGraph merge,
             // so that the rendered name has absolutely no extra bracket explanation, looking clean.
-            const modelWidgetName = "   Model Str" + "\u200B".repeat(i);
-            const clipWidgetName = "   Clip Str" + "\u200B".repeat(i);
+            const modelWidgetName = "   Strength" + "\u200B".repeat(i);
 
-            // Slider for Model Strength
             const modelSlider = node.addWidget("slider", modelWidgetName, lora.strength_model ?? 1.0, (val) => {
                 lora.strength_model = parseFloat(parseFloat(val).toFixed(2));
                 updateJsonValue(node);
             }, { min: -2.0, max: 2.0, step: 0.1, precision: 2 });
+            modelSlider.__animaWidgetType = "model_strength";
             modelSlider.computedHeight = 18;
             node._dynamicWidgets.push(modelSlider);
-
-            // Slider for Clip Strength
-            const clipSlider = node.addWidget("slider", clipWidgetName, lora.strength_clip ?? 1.0, (val) => {
-                lora.strength_clip = parseFloat(parseFloat(val).toFixed(2));
-                updateJsonValue(node);
-            }, { min: -2.0, max: 2.0, step: 0.1, precision: 2 });
-            clipSlider.computedHeight = 18;
-            node._dynamicWidgets.push(clipSlider);
         }
 
         // 4. Add Open LoRA Selector Button at the very bottom of the node
@@ -203,6 +273,7 @@ function syncLoraWidgets(node, loras) {
         } else {
             node.size = [w, h];
         }
+        updateLoraWidgetLabels(node);
         
         node.setDirtyCanvas(true, true);
     } catch (err) {
@@ -213,7 +284,8 @@ function syncLoraWidgets(node, loras) {
 function updateJsonValue(node) {
     const jsonWidget = node.widgets.find(w => w.name === "lora_list_json");
     if (jsonWidget) {
-        jsonWidget.value = JSON.stringify(node._loraData || []);
+        node._loraData = normalizeLoraList(node._loraData || []);
+        jsonWidget.value = JSON.stringify(node._loraData);
     }
 }
 
@@ -318,7 +390,8 @@ const LORA_CARD_PREVIEW_WIDTH = 450;
 const LORA_DETAIL_PREVIEW_WIDTH = 450;
 const LORA_LOCAL_CARD_PREVIEW_WIDTH = LORA_MANIFEST_WIDTH;
 const CIVITAI_SEARCH_CACHE_TTL = 24 * 60 * 60 * 1000;
-const CIVITAI_SEARCH_CACHE_VERSION = "v2-category-meili";
+const CIVITAI_SEARCH_CACHE_VERSION = "v4-description-detail";
+const CIVITAI_API_KEYS_URL = "https://civitai.com/user/account?tab=apiKeys";
 const civitaiSearchCache = {
     key(url) {
         return `${CIVITAI_SEARCH_CACHE_VERSION}:${url}`;
@@ -440,16 +513,163 @@ async function openLoraSelectorModal(node) {
     let searchRequestSeq = 0;
     let pollInterval = null;
     
-    let currentCategory = "all"; // 'all', 'style', 'character', 'clothing', 'background', 'downloaded', 'favorites'
-    let currentSort = "Highest Rated"; // 'Highest Rated', 'Most Downloaded', 'Newest', 'Most Liked'
+    let currentCategory = "all"; // 'all', 'style', 'character', 'clothing', 'background', 'loaded', 'downloaded', 'favorites'
+    let currentSort = "models_v9"; // Matches Civitai search sortBy values.
     let selectedModel = null; // Currently clicked model for previewing details
     let selectedVersion = null; // Selected version of the clicked model
     let previewRenderGeneration = 0;
     let loraManifestSignature = "";
+    let searchDebounceTimer = null;
+    let civitaiApiKeyDownloadWarningShown = false;
+    const notifiedDownloadFailures = new Set();
+    const startedDownloadTaskIds = new Set();
+    const modelDetailCache = new Map();
+    const modelDetailFetches = new Map();
 
     function getManifestSignature(manifestData) {
         const items = Array.isArray(manifestData?.items) ? manifestData.items : [];
-        return items.map(item => `${item.filename}|${item.cache_key || ""}|${item.mtime || ""}|${item.size || ""}`).join("\n");
+        const customDir = manifestData?.custom_lora_dir || "";
+        const customDirValid = manifestData?.custom_lora_dir_valid === true ? "1" : "0";
+        const itemSignature = items.map(item => `${item.filename}|${item.cache_key || ""}|${item.mtime || ""}|${item.size || ""}|${item.source || ""}`).join("\n");
+        return `${customDir}|${customDirValid}\n${itemSignature}`;
+    }
+
+    function formatStatCount(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num) || num <= 0) return "0";
+        if (num >= 1000000) return `${(num / 1000000).toFixed(num >= 10000000 ? 0 : 1).replace(/\.0$/, "")}M`;
+        if (num >= 1000) return `${(num / 1000).toFixed(num >= 10000 ? 0 : 1).replace(/\.0$/, "")}K`;
+        return String(Math.round(num));
+    }
+
+    function getModelStats(model, version = {}) {
+        const modelStats = model?.stats || model?.metrics || {};
+        const versionStats = version?.stats || version?.metrics || {};
+        const downloadCount = modelStats.downloadCount ?? versionStats.downloadCount ?? 0;
+        const likeCount = modelStats.thumbsUpCount ?? versionStats.thumbsUpCount ?? modelStats.favoriteCount ?? modelStats.collectedCount ?? 0;
+        return { downloadCount, likeCount };
+    }
+
+    function getModelDescriptionHtml(model, version = {}) {
+        const candidates = [
+            model?.description,
+            model?.descriptionHtml,
+            model?.descriptionPlaintext,
+            version?.description,
+            version?.descriptionHtml,
+            version?.descriptionPlaintext,
+            model?.metadata?.description,
+            version?.metadata?.description
+        ];
+        const found = candidates.find(value => typeof value === "string" && value.trim());
+        return found ? found.trim() : "";
+    }
+
+    function showCopyFeedback(message) {
+        const toast = document.createElement("div");
+        toast.className = "anima-lora-copy-toast";
+        toast.innerText = message;
+        modalOverlay.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add("show"));
+        setTimeout(() => {
+            toast.classList.remove("show");
+            setTimeout(() => toast.remove(), 180);
+        }, 1200);
+    }
+
+    async function copyTextToClipboard(text) {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        textarea.style.top = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const copied = document.execCommand("copy");
+        textarea.remove();
+        if (!copied) {
+            throw new Error("Copy command failed");
+        }
+    }
+
+    function mergeSelectedModelDetail(fullModel, preferredVersionId = null) {
+        if (!fullModel || !selectedModel || String(selectedModel.id) !== String(fullModel.id)) return;
+        const previousVersions = selectedModel.modelVersions || [];
+        const detailVersions = Array.isArray(fullModel.modelVersions) ? fullModel.modelVersions : [];
+        const mergedVersions = detailVersions.length > 0
+            ? detailVersions.map(version => {
+                const previous = previousVersions.find(item => String(item.id) === String(version.id)) || {};
+                return {
+                    ...previous,
+                    ...version,
+                    images: Array.isArray(version.images) && version.images.length ? version.images : (previous.images || []),
+                    files: Array.isArray(version.files) && version.files.length ? version.files : (previous.files || []),
+                    downloadUrl: version.downloadUrl || previous.downloadUrl || ""
+                };
+            })
+            : previousVersions;
+
+        selectedModel = {
+            ...selectedModel,
+            ...fullModel,
+            creator: fullModel.creator || selectedModel.creator,
+            modelVersions: mergedVersions
+        };
+
+        const versionId = preferredVersionId ?? selectedVersion?.id;
+        const matchedVersion = mergedVersions.find(version => String(version.id) === String(versionId));
+        if (matchedVersion) {
+            selectedVersion = {
+                ...selectedVersion,
+                ...matchedVersion,
+                images: Array.isArray(matchedVersion.images) && matchedVersion.images.length ? matchedVersion.images : (selectedVersion?.images || []),
+                files: Array.isArray(matchedVersion.files) && matchedVersion.files.length ? matchedVersion.files : (selectedVersion?.files || []),
+                downloadUrl: matchedVersion.downloadUrl || selectedVersion?.downloadUrl || ""
+            };
+        }
+    }
+
+    async function hydrateSelectedModelDetail(modelId, preferredVersionId = null) {
+        const id = String(modelId || "");
+        if (!id || Number.isNaN(Number(id))) return;
+        if (getModelDescriptionHtml(selectedModel, selectedVersion) && modelDetailCache.has(id)) return;
+
+        if (modelDetailCache.has(id)) {
+            mergeSelectedModelDetail(modelDetailCache.get(id), preferredVersionId);
+            renderModelDetail();
+            return;
+        }
+
+        if (modelDetailFetches.has(id)) {
+            await modelDetailFetches.get(id);
+            if (modelDetailCache.has(id) && selectedModel && String(selectedModel.id) === id) {
+                mergeSelectedModelDetail(modelDetailCache.get(id), preferredVersionId);
+                renderModelDetail();
+            }
+            return;
+        }
+
+        const request = fetch(`/anima-tools/lora/model-detail?id=${encodeURIComponent(id)}`)
+            .then(resp => resp.ok ? resp.json() : null)
+            .then(data => {
+                if (data?.success && data.model) {
+                    modelDetailCache.set(id, data.model);
+                }
+            })
+            .catch(error => console.error("[Anima Tools] Failed to fetch model detail", error))
+            .finally(() => modelDetailFetches.delete(id));
+
+        modelDetailFetches.set(id, request);
+        await request;
+        if (modelDetailCache.has(id) && selectedModel && String(selectedModel.id) === id) {
+            mergeSelectedModelDetail(modelDetailCache.get(id), preferredVersionId);
+            renderModelDetail();
+        }
     }
 
     function applyManifest(manifestData) {
@@ -475,6 +695,31 @@ async function openLoraSelectorModal(node) {
         }
         const version = item?.cache_key ? `&v=${encodeURIComponent(item.cache_key)}` : "";
         return `/anima-tools/lora/local-preview?filename=${encodeURIComponent(filename)}&width=${width}${version}`;
+    }
+
+    function getConfiguredAnimaLoraDir() {
+        const manifestDir = typeof globalLoraManifest?.custom_lora_dir === "string" ? globalLoraManifest.custom_lora_dir.trim() : "";
+        const configDir = typeof config?.custom_lora_dir === "string" ? config.custom_lora_dir.trim() : "";
+        return configDir || manifestDir;
+    }
+
+    function isConfiguredAnimaLoraDirValid() {
+        const manifestDir = typeof globalLoraManifest?.custom_lora_dir === "string" ? globalLoraManifest.custom_lora_dir.trim() : "";
+        const configDir = typeof config?.custom_lora_dir === "string" ? config.custom_lora_dir.trim() : "";
+        if (configDir && manifestDir && configDir !== manifestDir && typeof config?.custom_lora_dir_valid === "boolean") {
+            return config.custom_lora_dir_valid;
+        }
+        if (typeof globalLoraManifest?.custom_lora_dir_valid === "boolean") {
+            return globalLoraManifest.custom_lora_dir_valid;
+        }
+        if (typeof config?.custom_lora_dir_valid === "boolean") {
+            return config.custom_lora_dir_valid;
+        }
+        return false;
+    }
+
+    function getDownloadedManifestItems() {
+        return loraManifestItems.filter(item => item?.source === "custom");
     }
 
     function loadCachedManifestSync() {
@@ -513,6 +758,8 @@ async function openLoraSelectorModal(node) {
             if (rerender && changed) {
                 if (currentCategory === "downloaded") {
                     renderDownloadedOnly();
+                } else if (currentCategory === "loaded") {
+                    renderLoadedOnly();
                 } else if (currentCategory === "favorites") {
                     renderFavoritesOnly();
                 } else {
@@ -637,6 +884,29 @@ async function openLoraSelectorModal(node) {
             color: #7dd3fc;
             font-weight: 600;
         }
+        .anima-sidebar-section {
+            margin: 10px 8px 4px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            color: #6b7280;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .anima-sidebar-section:first-child {
+            margin-top: 0;
+            padding-top: 0;
+            border-top: none;
+        }
+        .anima-sidebar-btn.anima-sidebar-special {
+            background: rgba(255, 255, 255, 0.025);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+        }
+        .anima-sidebar-btn.anima-sidebar-special.active {
+            background: rgba(11, 140, 233, 0.18);
+            border-color: rgba(11, 140, 233, 0.28);
+        }
         .anima-lora-card {
             background: #202022;
             border: 1px solid rgba(255, 255, 255, 0.05);
@@ -691,6 +961,60 @@ async function openLoraSelectorModal(node) {
         }
         .anima-lora-favorite-btn.active {
             color: #eab308 !important;
+        }
+        .anima-lora-card-stat-row {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            min-height: 20px;
+            overflow: hidden;
+        }
+        .anima-lora-card-stat-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            height: 20px;
+            max-width: 76px;
+            padding: 0 7px;
+            border-radius: 999px;
+            background: rgba(20, 20, 24, 0.78);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f8fafc;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 1;
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+            backdrop-filter: blur(8px);
+            white-space: nowrap;
+        }
+        .anima-lora-card-stat-chip span {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .anima-lora-copy-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 34px;
+            transform: translateX(-50%) translateY(8px);
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(12, 140, 233, 0.92);
+            border: 1px solid rgba(125, 211, 252, 0.55);
+            color: #f8fafc;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+            box-shadow: 0 10px 30px rgba(12, 140, 233, 0.35);
+            backdrop-filter: blur(12px);
+            opacity: 0;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+            pointer-events: none;
+            z-index: 100002;
+        }
+        .anima-lora-copy-toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
         }
         .anima-download-bar {
             position: absolute;
@@ -784,10 +1108,29 @@ async function openLoraSelectorModal(node) {
             width: 100%;
             aspect-ratio: 2 / 3;
             border-radius: 10px;
-            background: #000;
+            background: #08080a;
             overflow: hidden;
             position: relative;
             flex-shrink: 0;
+        }
+        .anima-lora-preview-bg {
+            position: absolute;
+            inset: -24px;
+            width: calc(100% + 48px);
+            height: calc(100% + 48px);
+            object-fit: cover;
+            filter: blur(22px) saturate(1.18) brightness(0.72);
+            transform: scale(1.08);
+            opacity: 0.82;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .anima-lora-preview-bg-overlay {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.42));
+            z-index: 1;
+            pointer-events: none;
         }
         .anima-lora-preview-nav {
             position: absolute;
@@ -882,22 +1225,23 @@ async function openLoraSelectorModal(node) {
     // --- Header Section ---
     const header = document.createElement("div");
     header.style.cssText = `
-        padding: 20px;
+        padding: 16px 20px;
         border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        display: flex;
+        display: grid;
+        grid-template-columns: 190px minmax(0, 1fr) 340px;
         align-items: center;
-        justify-content: space-between;
-        gap: 16px;
+        gap: 20px;
         flex-shrink: 0;
     `;
 
     const titleContainer = document.createElement("div");
+    titleContainer.style.cssText = "min-width: 0;";
     const title = document.createElement("h2");
     title.innerText = t("Anima LoRA Selector");
-    title.style.cssText = "margin: 0; font-size: 20px; font-weight: 700; color: #ffffff; background: linear-gradient(90deg, #7dd3fc, #0b8ce9); -webkit-background-clip: text; -webkit-text-fill-color: transparent;";
+    title.style.cssText = "margin: 0; font-size: 18px; font-weight: 700; color: #ffffff; background: linear-gradient(90deg, #7dd3fc, #0b8ce9); -webkit-background-clip: text; -webkit-text-fill-color: transparent; white-space: nowrap;";
     const subTitle = document.createElement("p");
-    subTitle.innerText = "Browse, download and load Anima base model LoRAs";
-    subTitle.style.cssText = "margin: 4px 0 0 0; font-size: 12px; color: #9ca3af;";
+    subTitle.innerText = "Anima LoRA";
+    subTitle.style.cssText = "margin: 4px 0 0 0; font-size: 11px; color: #9ca3af;";
     titleContainer.appendChild(title);
     titleContainer.appendChild(subTitle);
 
@@ -906,7 +1250,7 @@ async function openLoraSelectorModal(node) {
     searchInput.placeholder = t("Search Anima LoRAs...");
     searchInput.style.cssText = `
         flex: 1;
-        max-width: 300px;
+        min-width: 220px;
         background: #222225;
         border: 1px solid rgba(255,255,255,0.1);
         border-radius: 10px;
@@ -918,16 +1262,40 @@ async function openLoraSelectorModal(node) {
     `;
     searchInput.onfocus = () => searchInput.style.borderColor = "#0b8ce9";
     searchInput.onblur = () => searchInput.style.borderColor = "rgba(255,255,255,0.1)";
+    const runSearchFromInput = (forceRefresh = false) => {
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = null;
+        }
+        const nextQuery = searchInput.value.trim();
+        if (query === nextQuery && !forceRefresh) return;
+        query = nextQuery;
+        cursor = "";
+        executeSearch(false, forceRefresh);
+    };
+    const scheduleSearchFromInput = () => {
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => {
+            runSearchFromInput(false);
+        }, 420);
+    };
+    searchInput.oninput = () => {
+        scheduleSearchFromInput();
+    };
     searchInput.onkeydown = (e) => {
         if (e.key === "Enter") {
-            query = searchInput.value.trim();
-            cursor = "";
-            executeSearch();
+            runSearchFromInput(false);
+        } else if (e.key === "Escape" && searchInput.value) {
+            searchInput.value = "";
+            runSearchFromInput(false);
         }
     };
 
+    const centerControls = document.createElement("div");
+    centerControls.style.cssText = "display: flex; align-items: center; gap: 10px; min-width: 0; flex-wrap: wrap;";
+
     const filterRow = document.createElement("div");
-    filterRow.style.cssText = "display: flex; align-items: center; gap: 8px;";
+    filterRow.style.cssText = "display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;";
 
     // Sort Dropdown (Matching Civitai: Highest Rated, Most Downloaded, Newest, Most Liked)
     const sortSelect = document.createElement("select");
@@ -940,12 +1308,17 @@ async function openLoraSelectorModal(node) {
         outline: none;
         font-size: 13px;
         cursor: pointer;
+        max-width: 220px;
     `;
     const sortOptions = [
-        { val: "Highest Rated", label: "★ " + t("Uniqueness Score ⬇").replace("独特度分数", "评分最高").replace("Uniqueness Score", "Highest Rated") },
-        { val: "Most Downloaded", label: "📥 " + t("Works Count ⬇").replace("作品数量", "下载最多").replace("Works Count", "Most Downloaded") },
-        { val: "Newest", label: "📅 " + t("Newest").replace("Newest", "最新发布") },
-        { val: "Most Liked", label: "❤️ " + t("Most Liked").replace("Most Liked", "最受欢迎") }
+        { val: "models_v9", label: "相关 / Relevancy" },
+        { val: "models_v9:metrics.thumbsUpCount:desc", label: "评分最高 / Highest Rated" },
+        { val: "models_v9:metrics.downloadCount:desc", label: "下载最多 / Most Downloaded" },
+        { val: "models_v9:metrics.favoriteCount:desc", label: "喜欢最多 / Most Liked" },
+        { val: "models_v9:metrics.commentCount:desc", label: "讨论最多 / Most Discussed" },
+        { val: "models_v9:metrics.collectedCount:desc", label: "收藏最多 / Most Collected" },
+        { val: "models_v9:metrics.tippedAmountCount:desc", label: "打赏最多 / Most Buzz" },
+        { val: "models_v9:createdAt:desc", label: "最新发布 / Newest" }
     ];
     sortOptions.forEach(opt => {
         const o = document.createElement("option");
@@ -955,6 +1328,11 @@ async function openLoraSelectorModal(node) {
     });
     sortSelect.value = currentSort;
     sortSelect.onchange = () => {
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
+            searchDebounceTimer = null;
+        }
+        query = searchInput.value.trim();
         currentSort = sortSelect.value;
         cursor = "";
         executeSearch();
@@ -983,7 +1361,7 @@ async function openLoraSelectorModal(node) {
         refreshBtn.style.background = "rgba(255, 255, 255, 0.08)";
     };
     refreshBtn.onclick = () => {
-        executeSearch(false, true);
+        runSearchFromInput(true);
     };
     filterRow.appendChild(refreshBtn);
 
@@ -1009,30 +1387,26 @@ async function openLoraSelectorModal(node) {
     };
     clearCacheBtn.onclick = () => {
         localStorage.removeItem("anima-civitai-search-cache");
-        executeSearch(false, false);
+        runSearchFromInput(true);
     };
     filterRow.appendChild(clearCacheBtn);
 
     const actionRow = document.createElement("div");
-    actionRow.style.cssText = "display: flex; align-items: center; gap: 12px;";
+    actionRow.style.cssText = "display: flex; align-items: center; justify-content: flex-end; gap: 12px;";
 
     const settingsBtn = document.createElement("button");
     settingsBtn.innerHTML = "⚙️";
     settingsBtn.className = "anima-btn-secondary";
     settingsBtn.style.padding = "10px";
+    settingsBtn.title = "Settings / 设置";
     settingsBtn.onclick = () => openSettingsModal();
 
-    const closeBtn = document.createElement("button");
-    closeBtn.innerText = t("Cancel");
-    closeBtn.className = "anima-btn-secondary";
-    closeBtn.onclick = closeModal;
-
     actionRow.appendChild(settingsBtn);
-    actionRow.appendChild(closeBtn);
+    centerControls.appendChild(searchInput);
+    centerControls.appendChild(filterRow);
 
     header.appendChild(titleContainer);
-    header.appendChild(searchInput);
-    header.appendChild(filterRow);
+    header.appendChild(centerControls);
     header.appendChild(actionRow);
 
     // --- Split Layout (Sidebar + List + Detail Sidebar) ---
@@ -1059,26 +1433,43 @@ async function openLoraSelectorModal(node) {
         overflow-y: auto;
     `;
 
-    const categories = [
-        { id: "all", label: "全部 / All", category: "" },
-        { id: "action", label: "动作 / Action", category: "action" },
-        { id: "animal", label: "动物 / Animal", category: "animal" },
-        { id: "assets", label: "素材 / Assets", category: "assets" },
-        { id: "background", label: "背景 / Background", category: "background" },
-        { id: "base model", label: "基础模型 / Base Model", category: "base model" },
-        { id: "buildings", label: "建筑 / Buildings", category: "buildings" },
-        { id: "celebrity", label: "名人 / Celebrity", category: "celebrity" },
-        { id: "character", label: "角色 / Character", category: "character" },
-        { id: "clothing", label: "服装 / Clothing", category: "clothing" },
-        { id: "concept", label: "概念 / Concept", category: "concept" },
-        { id: "objects", label: "物品 / Objects", category: "objects" },
-        { id: "poses", label: "姿势 / Poses", category: "poses" },
-        { id: "style", label: "风格 / Style", category: "style" },
-        { id: "tool", label: "工具 / Tool", category: "tool" },
-        { id: "vehicle", label: "载具 / Vehicle", category: "vehicle" },
-        { id: "downloaded", label: "已下载 / Downloaded" },
-        { id: "favorites", label: "收藏 / Favorites" }
+    const categoryGroups = [
+        {
+            title: "浏览 / Browse",
+            items: [
+                { id: "all", label: "全部 / All", category: "", special: true }
+            ]
+        },
+        {
+            title: "分类 / Category",
+            items: [
+                { id: "action", label: "动作 / Action", category: "action" },
+                { id: "animal", label: "动物 / Animal", category: "animal" },
+                { id: "assets", label: "素材 / Assets", category: "assets" },
+                { id: "background", label: "背景 / Background", category: "background" },
+                { id: "base model", label: "基础模型 / Base Model", category: "base model" },
+                { id: "buildings", label: "建筑 / Buildings", category: "buildings" },
+                { id: "celebrity", label: "名人 / Celebrity", category: "celebrity" },
+                { id: "character", label: "角色 / Character", category: "character" },
+                { id: "clothing", label: "服装 / Clothing", category: "clothing" },
+                { id: "concept", label: "概念 / Concept", category: "concept" },
+                { id: "objects", label: "物品 / Objects", category: "objects" },
+                { id: "poses", label: "姿势 / Poses", category: "poses" },
+                { id: "style", label: "风格 / Style", category: "style" },
+                { id: "tool", label: "工具 / Tool", category: "tool" },
+                { id: "vehicle", label: "载具 / Vehicle", category: "vehicle" }
+            ]
+        },
+        {
+            title: "本地 / Local",
+            items: [
+                { id: "downloaded", label: "已下载 / Downloaded", special: true },
+                { id: "loaded", label: "已加载 / Loaded", special: true },
+                { id: "favorites", label: "收藏 / Favorites", special: true }
+            ]
+        }
     ];
+    const categories = categoryGroups.flatMap(group => group.items);
 
     function buildSearchUrl(loadNext = false) {
         const activeCat = categories.find(c => c.id === currentCategory);
@@ -1091,7 +1482,7 @@ async function openLoraSelectorModal(node) {
     }
 
     function tryRenderCachedSearchPage() {
-        if (currentCategory === "downloaded" || currentCategory === "favorites") return false;
+        if (currentCategory === "downloaded" || currentCategory === "loaded" || currentCategory === "favorites") return false;
         const searchUrl = buildSearchUrl(false);
         const cached = civitaiSearchCache.get(searchUrl);
         if (!cached || Date.now() - cached.timestamp >= CIVITAI_SEARCH_CACHE_TTL) return false;
@@ -1106,9 +1497,16 @@ async function openLoraSelectorModal(node) {
     }
 
     const sidebarButtons = {};
-    categories.forEach(cat => {
+    categoryGroups.forEach(group => {
+        const section = document.createElement("div");
+        section.className = "anima-sidebar-section";
+        section.innerText = group.title;
+        sidebar.appendChild(section);
+
+        group.items.forEach(cat => {
         const btn = document.createElement("button");
         btn.className = "anima-sidebar-btn";
+            if (cat.special) btn.classList.add("anima-sidebar-special");
         if (cat.id === currentCategory) btn.classList.add("active");
         btn.innerText = cat.label;
         btn.onclick = () => {
@@ -1117,10 +1515,16 @@ async function openLoraSelectorModal(node) {
             btn.classList.add("active");
             currentCategory = cat.id;
             cursor = "";
+            if (searchDebounceTimer) {
+                clearTimeout(searchDebounceTimer);
+                searchDebounceTimer = null;
+            }
+            query = searchInput.value.trim();
             executeSearch();
         };
         sidebar.appendChild(btn);
         sidebarButtons[cat.id] = btn;
+        });
     });
 
     // 2. Center List Content Area
@@ -1164,7 +1568,7 @@ async function openLoraSelectorModal(node) {
     pagButtons.style.cssText = "display: flex; gap: 8px;";
 
     const prevBtn = document.createElement("button");
-    prevBtn.innerText = t("Previous");
+    prevBtn.innerText = "上一页";
     prevBtn.className = "anima-btn-secondary";
     prevBtn.disabled = true;
     prevBtn.onclick = () => {
@@ -1259,8 +1663,8 @@ async function openLoraSelectorModal(node) {
     }
 
     function updatePaginationButtons() {
-        prevBtn.disabled = isSearching || pageHistory.length === 0 || currentCategory === "downloaded" || currentCategory === "favorites";
-        nextBtn.disabled = isSearching || !cursor || currentCategory === "downloaded" || currentCategory === "favorites";
+        prevBtn.disabled = isSearching || pageHistory.length === 0 || currentCategory === "downloaded" || currentCategory === "loaded" || currentCategory === "favorites";
+        nextBtn.disabled = isSearching || !cursor || currentCategory === "downloaded" || currentCategory === "loaded" || currentCategory === "favorites";
     }
 
     function applySearchPage(pageState, message = "") {
@@ -1293,13 +1697,15 @@ async function openLoraSelectorModal(node) {
         // Search cache has already painted the first page.
     } else if (hasSyncManifest && currentCategory === "downloaded") {
         renderDownloadedOnly();
-        infoText.innerText = `Showing ${localLoras.length} cached local LoRAs.`;
+    } else if (hasSyncManifest && currentCategory === "loaded") {
+        renderLoadedOnly();
     } else {
         gridContainer.innerHTML = getSkeletonHtml(40);
         loadCachedManifest().then((hasCached) => {
             if (hasCached && currentCategory === "downloaded") {
                 renderDownloadedOnly();
-                infoText.innerText = `Showing ${localLoras.length} cached local LoRAs.`;
+            } else if (hasCached && currentCategory === "loaded") {
+                renderLoadedOnly();
             }
         });
     }
@@ -1348,6 +1754,8 @@ async function openLoraSelectorModal(node) {
             if (!changed) return;
             if (currentCategory === "downloaded") {
                 renderDownloadedOnly();
+            } else if (currentCategory === "loaded") {
+                renderLoadedOnly();
             } else if (!isSearching && searchResults.length > 0) {
                 renderGrid();
             }
@@ -1359,6 +1767,7 @@ async function openLoraSelectorModal(node) {
 
     // Close Handler
     function closeModal() {
+        if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
         if (pollInterval) clearInterval(pollInterval);
         resetPreviewObserver();
         document.head.removeChild(styleSheet);
@@ -1382,6 +1791,15 @@ async function openLoraSelectorModal(node) {
             currentPageState = null;
             updatePaginationButtons();
             renderDownloadedOnly();
+            return;
+        }
+
+        if (currentCategory === "loaded") {
+            isSearching = false;
+            pageHistory = [];
+            currentPageState = null;
+            updatePaginationButtons();
+            renderLoadedOnly();
             return;
         }
 
@@ -1650,9 +2068,27 @@ async function openLoraSelectorModal(node) {
             const author = document.createElement("div");
             author.innerText = `by ${model.creator?.username || "Unknown"}`;
             author.style.cssText = "font-size: 10px; color: #cbd5e1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 3px rgba(0,0,0,0.85);";
+
+            const stats = getModelStats(model, firstVersion);
+            const statRow = document.createElement("div");
+            statRow.className = "anima-lora-card-stat-row";
+
+            const downloadChip = document.createElement("div");
+            downloadChip.className = "anima-lora-card-stat-chip";
+            downloadChip.title = "Downloads";
+            downloadChip.innerHTML = `<span>↓</span><span>${formatStatCount(stats.downloadCount)}</span>`;
+
+            const likeChip = document.createElement("div");
+            likeChip.className = "anima-lora-card-stat-chip";
+            likeChip.title = "Likes";
+            likeChip.innerHTML = `<span>♥</span><span>${formatStatCount(stats.likeCount)}</span>`;
+
+            statRow.appendChild(downloadChip);
+            statRow.appendChild(likeChip);
             
             body.appendChild(modelName);
             body.appendChild(author);
+            body.appendChild(statRow);
 
             card.appendChild(imgContainer);
             card.appendChild(body);
@@ -1667,6 +2103,7 @@ async function openLoraSelectorModal(node) {
                 selectedModel = model;
                 selectedVersion = firstVersion;
                 renderModelDetail();
+                hydrateSelectedModelDetail(model.id, firstVersion.id);
             };
 
             fragment.appendChild(card);
@@ -1706,8 +2143,26 @@ async function openLoraSelectorModal(node) {
         const createFallbackPreview = () => {
             const fallback = document.createElement("img");
             fallback.src = noPreviewSvg;
-            fallback.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: #000;";
+            fallback.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: #000; position: relative; z-index: 2;";
             return fallback;
+        };
+
+        const addBlurredPreviewBackground = (item) => {
+            if (!item?.url || item.url === noPreviewSvg) return;
+            const bg = item.isVideo ? document.createElement("video") : document.createElement("img");
+            bg.className = "anima-lora-preview-bg";
+            if (item.isVideo) {
+                bg.muted = true;
+                bg.loop = true;
+                bg.playsInline = true;
+                bg.autoplay = true;
+                bg.controls = false;
+            }
+            bg.src = item.url;
+            const overlay = document.createElement("div");
+            overlay.className = "anima-lora-preview-bg-overlay";
+            imgContainer.appendChild(bg);
+            imgContainer.appendChild(overlay);
         };
 
         const getPreviewItems = () => {
@@ -1756,8 +2211,9 @@ async function openLoraSelectorModal(node) {
             imgContainer.innerHTML = "";
 
             const item = previewItems[currentPreviewIndex] || { url: noPreviewSvg, isVideo: false };
+            addBlurredPreviewBackground(item);
             const mediaElement = item.isVideo ? document.createElement("video") : document.createElement("img");
-            mediaElement.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: #000; cursor: zoom-in; opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);";
+            mediaElement.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: transparent; cursor: zoom-in; opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1); position: relative; z-index: 2;";
 
             if (item.isVideo) {
                 mediaElement.muted = true;
@@ -1812,7 +2268,7 @@ async function openLoraSelectorModal(node) {
                     loader?.remove();
                     if (!isCivitaiModel) {
                         const video = document.createElement("video");
-                        video.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: #000; cursor: zoom-in; opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);";
+                        video.style.cssText = "width: 100%; height: 100%; object-fit: contain; background: transparent; cursor: zoom-in; opacity: 0; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1); position: relative; z-index: 2;";
                         video.muted = true;
                         video.loop = true;
                         video.playsInline = true;
@@ -1966,6 +2422,8 @@ async function openLoraSelectorModal(node) {
                     // Refilter if on local grids
                     if (currentCategory === "downloaded") {
                         renderDownloadedOnly();
+                    } else if (currentCategory === "loaded") {
+                        renderLoadedOnly();
                     } else if (currentCategory === "favorites") {
                         renderFavoritesOnly();
                     } else {
@@ -1981,7 +2439,7 @@ async function openLoraSelectorModal(node) {
             actionBtn.style.border = "1px solid rgba(11, 140, 233, 0.3)";
             actionBtn.disabled = true;
         } else {
-            actionBtn.innerText = "📥 " + t("Download & Add");
+            actionBtn.innerText = t("Download & Add");
             actionBtn.style.background = "#0b8ce9";
             actionBtn.style.color = "#fff";
             actionBtn.onclick = () => {
@@ -2009,8 +2467,9 @@ async function openLoraSelectorModal(node) {
                 tag.innerText = word;
                 tag.title = "Click to copy";
                 tag.onclick = () => {
-                    navigator.clipboard.writeText(word);
-                    alert(`Copied: ${word}`);
+                    copyTextToClipboard(word)
+                        .then(() => showCopyFeedback(`已复制: ${word}`))
+                        .catch(() => showCopyFeedback("复制失败"));
                 };
                 listDiv.appendChild(tag);
             });
@@ -2033,7 +2492,7 @@ async function openLoraSelectorModal(node) {
         const descBody = document.createElement("div");
         descBody.className = "anima-lora-desc";
         
-        let descHtml = selectedModel.description || selectedVersion.description || "";
+        let descHtml = getModelDescriptionHtml(selectedModel, selectedVersion);
         if (descHtml) {
             // Clean up description if needed, render innerHTML
             descBody.innerHTML = descHtml;
@@ -2065,21 +2524,62 @@ async function openLoraSelectorModal(node) {
     // --- Render Downloaded Only (Local List) ---
     function renderDownloadedOnly() {
         const renderGeneration = clearGridForRender();
-        
-        const filteredLocal = localLoras.filter(name => {
+
+        const configuredDir = getConfiguredAnimaLoraDir();
+        const customDirValid = isConfiguredAnimaLoraDirValid();
+        if (!configuredDir || !customDirValid) {
+            const empty = document.createElement("div");
+            empty.style.cssText = "grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 48px 24px; line-height: 1.7; display: flex; flex-direction: column; gap: 8px; align-items: center;";
+            const title = document.createElement("div");
+            title.style.cssText = "font-size: 14px; font-weight: 700; color: #e5e7eb;";
+            title.innerText = !configuredDir ? "请先设置 Anima LoRA 存放位置" : "Anima LoRA 存放位置不存在";
+            const body = document.createElement("div");
+            body.style.cssText = "font-size: 12px; max-width: 460px;";
+            body.innerText = !configuredDir
+                ? "已下载标签页只显示用户设置目录中的 LoRA。请点击右上角设置，填写 Anima LoRA 存放位置。"
+                : "当前设置的目录无法访问。请点击右上角设置，重新填写有效的 Anima LoRA 存放位置。";
+            empty.appendChild(title);
+            empty.appendChild(body);
+            if (configuredDir) {
+                const pathHint = document.createElement("div");
+                pathHint.style.cssText = "font-size: 11px; color: #6b7280; max-width: 520px; overflow-wrap: anywhere;";
+                pathHint.innerText = configuredDir;
+                empty.appendChild(pathHint);
+            }
+            gridContainer.appendChild(empty);
+            infoText.innerText = !configuredDir ? "请设置 Anima LoRA 存放位置。" : "Anima LoRA 存放位置无效。";
+            return;
+        }
+
+        const downloadedItems = getDownloadedManifestItems();
+        const filteredItems = downloadedItems.filter(item => {
             const q = query.toLowerCase();
-            return !q || name.toLowerCase().includes(q);
+            if (!q) return true;
+            const meta = item.meta_summary || {};
+            return [
+                item.filename,
+                item.display_name,
+                meta.name,
+                meta.creator,
+                meta.version
+            ].filter(Boolean).some(value => String(value).toLowerCase().includes(q));
         });
 
-        if (filteredLocal.length === 0) {
-            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">No downloaded LoRAs found</div>`;
-            infoText.innerText = "No local models matched.";
+        if (downloadedItems.length === 0) {
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">该目录下还没有已下载的 LoRA</div>`;
+            infoText.innerText = "当前 Anima LoRA 目录为空。";
+            return;
+        }
+
+        if (filteredItems.length === 0) {
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">没有匹配当前搜索的已下载 LoRA</div>`;
+            infoText.innerText = "没有匹配当前搜索的本地模型。";
             return;
         }
 
         const fragment = document.createDocumentFragment();
-        for (const [index, filename] of filteredLocal.entries()) {
-            const manifestItem = getManifestItem(filename);
+        for (const [index, manifestItem] of filteredItems.entries()) {
+            const filename = manifestItem.filename;
             const card = document.createElement("div");
             card.className = "anima-lora-card";
             if (selectedModel && selectedModel.id === filename) {
@@ -2355,6 +2855,7 @@ async function openLoraSelectorModal(node) {
                             selectedModel.local_filename = filename;
                             selectedVersion.local_filename = filename;
                             renderModelDetail();
+                            hydrateSelectedModelDetail(selectedModel.id, selectedVersion.id);
                         }
                     }
                 } catch (e) {
@@ -2366,7 +2867,241 @@ async function openLoraSelectorModal(node) {
         }
 
         gridContainer.appendChild(fragment);
-        infoText.innerText = `Found ${filteredLocal.length} local LoRAs.`;
+        infoText.innerText = `Found ${filteredItems.length} Anima LoRAs.`;
+    }
+
+    // --- Render Loaded Only (LoRAs currently added to this node) ---
+    function renderLoadedOnly() {
+        const renderGeneration = clearGridForRender();
+        const loadedItems = normalizeLoraList(node._loraData || []);
+        const filteredItems = loadedItems.filter(item => {
+            const q = query.toLowerCase();
+            if (!q) return true;
+            const manifestItem = getManifestItem(item.name);
+            const meta = manifestItem?.meta_summary || {};
+            return [
+                item.name,
+                manifestItem?.display_name,
+                meta.name,
+                meta.creator,
+                meta.version
+            ].filter(Boolean).some(value => String(value).toLowerCase().includes(q));
+        });
+
+        if (loadedItems.length === 0) {
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">当前节点还没有已加载的 LoRA</div>`;
+            infoText.innerText = "当前节点未加载 LoRA。";
+            return;
+        }
+
+        if (filteredItems.length === 0) {
+            gridContainer.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #9ca3af; padding: 40px;">没有匹配当前搜索的已加载 LoRA</div>`;
+            infoText.innerText = "没有匹配当前搜索的已加载 LoRA。";
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        for (const [index, loadedItem] of filteredItems.entries()) {
+            const filename = loadedItem.name;
+            const manifestItem = getManifestItem(filename);
+            const card = document.createElement("div");
+            card.className = "anima-lora-card";
+            if (selectedModel && (selectedModel.id === filename || selectedModel.local_filename === filename)) {
+                card.classList.add("selected");
+            }
+
+            const imgContainer = document.createElement("div");
+            imgContainer.style.cssText = "width: 100%; height: 100%; background: transparent; overflow: hidden; position: relative; flex: 1; display: flex; align-items: center; justify-content: center;";
+
+            const img = document.createElement("img");
+            img.style.cssText = "width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);";
+            img.loading = index < INITIAL_CARD_PREVIEW_LOADS ? "eager" : "lazy";
+            img.fetchPriority = index < INITIAL_CARD_PREVIEW_LOADS ? "high" : "low";
+
+            let loader = null;
+            let previewUrl = getLocalPreviewUrl(filename, LORA_LOCAL_CARD_PREVIEW_WIDTH);
+            if (manifestItem && !manifestItem.has_preview && manifestItem.meta_summary?.preview_url) {
+                previewUrl = getOptimizedImageUrl(manifestItem.meta_summary.preview_url, LORA_CARD_PREVIEW_WIDTH);
+            }
+
+            const previewAlreadyLoaded = isImageLoaded(previewUrl);
+            if (previewAlreadyLoaded) {
+                img.src = previewUrl;
+                img.style.opacity = "1";
+            }
+
+            img.onload = () => {
+                img.style.opacity = "1";
+                loader?.remove();
+                markImageLoaded(previewUrl);
+            };
+            img.onerror = () => {
+                img.remove();
+                loader?.remove();
+                const fallback = document.createElement("div");
+                fallback.innerText = "LoRA";
+                fallback.style.cssText = "font-size: 28px; font-weight: 800; color: #555;";
+                imgContainer.appendChild(fallback);
+            };
+
+            card.onmouseenter = () => {
+                img.style.transform = "scale(1.06)";
+            };
+            card.onmouseleave = () => {
+                img.style.transform = "scale(1)";
+            };
+            imgContainer.appendChild(img);
+            if (!previewAlreadyLoaded) {
+                schedulePreviewLoad(img, () => {
+                    if (renderGeneration !== previewRenderGeneration) return;
+                    if (img.dataset.loadStarted === "1") return;
+                    img.dataset.loadStarted = "1";
+                    loader = createPreviewLoader(imgContainer);
+                    img.src = previewUrl;
+                }, index);
+            }
+
+            const removeBtn = document.createElement("button");
+            removeBtn.innerText = "×";
+            removeBtn.title = "从当前节点移除";
+            removeBtn.style.cssText = `
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                width: 28px;
+                height: 28px;
+                border-radius: 50%;
+                background: rgba(0, 0, 0, 0.62);
+                border: 1px solid rgba(239, 68, 68, 0.32);
+                color: #fca5a5;
+                font-size: 18px;
+                line-height: 1;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10;
+                transition: all 0.2s;
+                opacity: 0;
+            `;
+            removeBtn.onmouseenter = () => {
+                removeBtn.style.background = "#ef4444";
+                removeBtn.style.color = "#ffffff";
+                removeBtn.style.transform = "scale(1.08)";
+            };
+            removeBtn.onmouseleave = () => {
+                removeBtn.style.background = "rgba(0, 0, 0, 0.62)";
+                removeBtn.style.color = "#fca5a5";
+                removeBtn.style.transform = "scale(1)";
+            };
+            removeBtn.onclick = (event) => {
+                event.stopPropagation();
+                node._loraData = normalizeLoraList(node._loraData || []).filter(item => item.name !== filename);
+                updateJsonValue(node);
+                syncLoraWidgets(node, node._loraData);
+                if (selectedModel && (selectedModel.id === filename || selectedModel.local_filename === filename)) {
+                    selectedModel = null;
+                    selectedVersion = null;
+                    renderDetailEmptyState();
+                }
+                renderLoadedOnly();
+            };
+            imgContainer.appendChild(removeBtn);
+
+            card.onmouseenter = () => {
+                img.style.transform = "scale(1.06)";
+                removeBtn.style.opacity = "1";
+            };
+            card.onmouseleave = () => {
+                img.style.transform = "scale(1)";
+                removeBtn.style.opacity = "0";
+            };
+
+            const statusDot = document.createElement("div");
+            statusDot.style.cssText = "position: absolute; top: 8px; left: 8px; width: 10px; height: 10px; border-radius: 50%; background: #0c8ce9; border: 2px solid #202022; z-index: 8;";
+            imgContainer.appendChild(statusDot);
+
+            const body = document.createElement("div");
+            body.style.cssText = `
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                width: 100%;
+                background: linear-gradient(to top, rgba(10, 10, 15, 0.95) 0%, rgba(10, 10, 15, 0.6) 60%, rgba(10, 10, 15, 0) 100%);
+                padding: 40px 12px 12px 12px;
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+                overflow: hidden;
+                box-sizing: border-box;
+                z-index: 5;
+                pointer-events: none;
+            `;
+
+            const modelName = document.createElement("div");
+            modelName.style.cssText = "font-size: 12px; font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-shadow: 0 1px 4px rgba(0,0,0,0.85);";
+            const metaSummary = manifestItem?.meta_summary || {};
+            modelName.innerText = metaSummary.name || getLoraBaseName(filename);
+            modelName.title = filename;
+
+            const strengthLabel = document.createElement("div");
+            strengthLabel.innerText = `Strength ${Number(loadedItem.strength_model || 1).toFixed(2)}`;
+            strengthLabel.style.cssText = "font-size: 10px; color: #7dd3fc; text-shadow: 0 1px 3px rgba(0,0,0,0.85);";
+            if (metaSummary.creator) {
+                strengthLabel.innerText = `by ${metaSummary.creator} · Strength ${Number(loadedItem.strength_model || 1).toFixed(2)}`;
+                strengthLabel.style.color = "#cbd5e1";
+            }
+
+            body.appendChild(modelName);
+            body.appendChild(strengthLabel);
+            card.appendChild(imgContainer);
+            card.appendChild(body);
+
+            card.onclick = async () => {
+                const allCards = gridContainer.querySelectorAll(".anima-lora-card");
+                allCards.forEach(c => c.classList.remove("selected"));
+                card.classList.add("selected");
+
+                selectedModel = {
+                    id: filename,
+                    name: metaSummary.name || getLoraBaseName(filename),
+                    creator: metaSummary.creator ? { username: metaSummary.creator } : undefined,
+                    description: "This LoRA is currently loaded in this node.",
+                    local_filename: filename
+                };
+                selectedVersion = {
+                    id: filename,
+                    name: metaSummary.version || "Loaded version",
+                    trainedWords: metaSummary.trained_words || [],
+                    files: [{ name: filename }],
+                    downloadUrl: "",
+                    local_filename: filename
+                };
+                renderModelDetail();
+
+                try {
+                    const resp = await fetch(`/anima-tools/lora/local-metadata?filename=${encodeURIComponent(filename)}`);
+                    if (resp.ok) {
+                        const resData = await resp.json();
+                        if (resData.success && resData.metadata) {
+                            selectedModel = resData.metadata.model;
+                            selectedVersion = resData.metadata.version;
+                            selectedModel.local_filename = filename;
+                            selectedVersion.local_filename = filename;
+                            renderModelDetail();
+                            hydrateSelectedModelDetail(selectedModel.id, selectedVersion.id);
+                        }
+                    }
+                } catch (e) {
+                    console.error("[Anima Tools] Failed to fetch loaded model metadata", e);
+                }
+            };
+
+            fragment.appendChild(card);
+        }
+
+        gridContainer.appendChild(fragment);
+        infoText.innerText = `Showing ${filteredItems.length} loaded LoRAs.`;
     }
 
     // --- Render Favorites Only ---
@@ -2418,7 +3153,11 @@ async function openLoraSelectorModal(node) {
             });
 
             if (resp.ok) {
-                activeDownloads[versionId] = {
+                const data = await resp.json();
+                const taskId = String(data.task_id || versionId);
+                startedDownloadTaskIds.add(taskId);
+                notifiedDownloadFailures.delete(taskId);
+                activeDownloads[taskId] = {
                     status: "downloading",
                     progress: 0,
                     total: 0
@@ -2462,14 +3201,28 @@ async function openLoraSelectorModal(node) {
                     }
                     needsManifestRefresh = true;
                     delete activeDownloads[task_id];
+                    startedDownloadTaskIds.delete(String(task_id));
                 } else if (job.status === "failed") {
                     console.error(`Download failed for task ${task_id}: ${job.error}`);
-                    if (job.error && job.error.includes("401")) {
-                        alert(`【下载失败】此模型需要 Civitai API Key 才能下载。\n请点击界面右上角的 ⚙️ (齿轮) 按钮配置你的 API Key 后再试。`);
-                    } else {
+                    const taskKey = String(task_id);
+                    const shouldNotify = startedDownloadTaskIds.has(taskKey);
+                    delete activeDownloads[taskKey];
+
+                    if (notifiedDownloadFailures.has(taskKey)) {
+                        continue;
+                    }
+
+                    notifiedDownloadFailures.add(taskKey);
+                    const isApiKeyError = job.error && (job.error.includes("401") || job.error.includes("403") || job.error.includes("API Key"));
+                    if (shouldNotify && isApiKeyError) {
+                        if (!civitaiApiKeyDownloadWarningShown) {
+                            civitaiApiKeyDownloadWarningShown = true;
+                            alert(`【下载失败】此模型需要 Civitai API Key 才能下载。\n请点击界面右上角的 ⚙️ (齿轮) 按钮配置你的 API Key 后再试。`);
+                        }
+                    } else if (shouldNotify) {
                         alert(`Download failed for model version ${task_id}. Error: ${job.error}`);
                     }
-                    delete activeDownloads[task_id];
+                    startedDownloadTaskIds.delete(taskKey);
                     needGridRebuild = true;
                 }
             }
@@ -2482,6 +3235,8 @@ async function openLoraSelectorModal(node) {
             if (needGridRebuild) {
                 if (currentCategory === "downloaded") {
                     renderDownloadedOnly();
+                } else if (currentCategory === "loaded") {
+                    renderLoadedOnly();
                 } else if (currentCategory === "favorites") {
                     renderFavoritesOnly();
                 } else {
@@ -2492,7 +3247,7 @@ async function openLoraSelectorModal(node) {
                 if (selectedModel) {
                     renderModelDetail();
                 }
-            } else if (selectedVersion && activeDownloads[selectedVersion.id]) {
+            } else if (selectedVersion && activeDownloads[selectedVersion.id] && ["pending", "downloading"].includes(activeDownloads[selectedVersion.id].status)) {
                 // 仅更新详情面板的按钮状态文字
                 const actionBtn = detailPanel.querySelector(".anima-btn-primary");
                 if (actionBtn) {
@@ -2511,7 +3266,6 @@ async function openLoraSelectorModal(node) {
             node._loraData.push({
                 name: filename,
                 strength_model: 1.0,
-                strength_clip: 1.0,
                 enabled: true
             });
             updateJsonValue(node);
@@ -2622,8 +3376,24 @@ async function openLoraSelectorModal(node) {
         `;
 
         const keyLabel = document.createElement("div");
-        keyLabel.innerText = t("Civitai API Key Config");
-        keyLabel.style.cssText = "font-size: 12px; color: #9ca3af; margin-bottom: -8px;";
+        keyLabel.style.cssText = "font-size: 12px; color: #9ca3af; margin-bottom: -8px; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; width: fit-content;";
+        keyLabel.title = "Open Civitai API Key settings";
+        keyLabel.tabIndex = 0;
+        const keyLabelText = document.createElement("span");
+        keyLabelText.innerText = t("Civitai API Key Config");
+        const keyLabelIcon = document.createElement("span");
+        keyLabelIcon.innerText = "↗";
+        keyLabelIcon.style.cssText = "font-size: 12px; color: #7dd3fc; line-height: 1;";
+        const openCivitaiApiKeys = () => window.open(CIVITAI_API_KEYS_URL, "_blank", "noopener,noreferrer");
+        keyLabel.onclick = openCivitaiApiKeys;
+        keyLabel.onkeydown = (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openCivitaiApiKeys();
+            }
+        };
+        keyLabel.appendChild(keyLabelText);
+        keyLabel.appendChild(keyLabelIcon);
 
         const keyInput = document.createElement("input");
         keyInput.type = "password";
@@ -2668,12 +3438,18 @@ async function openLoraSelectorModal(node) {
                     const data = await resp.json();
                     config.custom_lora_dir = dirVal;
                     config.civitai_api_key = keyVal;
+                    config.custom_lora_dir_valid = data.custom_lora_dir_valid === true;
+                    config.custom_lora_dir_abs = data.custom_lora_dir_abs || "";
                     globalLoraConfig = config;
-                    alert(t("Path saved successfully"));
+                    if (keyVal) {
+                        civitaiApiKeyDownloadWarningShown = false;
+                    }
                     
                     await refreshManifest();
                     if (currentCategory === "downloaded") {
                         renderDownloadedOnly();
+                    } else if (currentCategory === "loaded") {
+                        renderLoadedOnly();
                     } else if (currentCategory === "favorites") {
                         renderFavoritesOnly();
                     } else {

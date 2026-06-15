@@ -1,13 +1,13 @@
 [project]
 name = "comfyui-anima-tools"
-version = "1.0.5"
-description = "专为 ComfyUI 设计的高性能、多维度二次元画师与角色视觉选择套件 (Artist & Character Visual Selector)"
+version = "1.1.0"
+description = "专为 ComfyUI 设计的高性能、多维度二次元画师、角色视觉选择与 Anima LoRA 搜索下载加载套件 (Artist, Character & Anima LoRA Visual Selector)"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [
     { name = "nnegret" }
 ]
-keywords = ["comfyui", "anime", "artist-style", "character-tags", "prompt-generator"]
+keywords = ["comfyui", "anime", "artist-style", "character-tags", "lora-loader", "prompt-generator"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

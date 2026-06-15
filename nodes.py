@@ -230,17 +230,16 @@ class AnimaMultiLoraLoader:
         return {
             "required": {
                 "model": ("MODEL",),
-                "clip": ("CLIP",),
                 "lora_list_json": ("STRING", {"default": "[]", "multiline": True}),
             }
         }
 
-    RETURN_TYPES = ("MODEL", "CLIP")
-    RETURN_NAMES = ("MODEL", "CLIP")
+    RETURN_TYPES = ("MODEL",)
+    RETURN_NAMES = ("MODEL",)
     FUNCTION = "load_loras"
     CATEGORY = "AnimaArt"
 
-    def load_loras(self, model, clip, lora_list_json):
+    def load_loras(self, model, lora_list_json):
         import json
         import comfy.sd
         import comfy.utils
@@ -254,7 +253,6 @@ class AnimaMultiLoraLoader:
             loras = []
             
         current_model = model
-        current_clip = clip
         
         for lora_entry in loras:
             if not lora_entry.get("enabled", True):
@@ -262,7 +260,6 @@ class AnimaMultiLoraLoader:
                 
             lora_name = lora_entry.get("name")
             strength_model = float(lora_entry.get("strength_model", 1.0))
-            strength_clip = float(lora_entry.get("strength_clip", 1.0))
             
             if not lora_name:
                 continue
@@ -293,15 +290,15 @@ class AnimaMultiLoraLoader:
                     continue
                     
             try:
-                print(f"[Anima Tools] Applying LoRA: {lora_name} -> Model Strength: {strength_model}, Clip Strength: {strength_clip}")
+                print(f"[Anima Tools] Applying LoRA: {lora_name} -> Model Strength: {strength_model}")
                 lora_data = comfy.utils.load_torch_file(lora_path, safe_load=True)
-                current_model, current_clip = comfy.sd.load_lora_for_models(
-                    current_model, current_clip, lora_data, strength_model, strength_clip
+                current_model, _ = comfy.sd.load_lora_for_models(
+                    current_model, None, lora_data, strength_model, 0.0
                 )
             except Exception as e:
                 print(f"[Anima Tools] Failed to load LoRA {lora_name}: {e}")
                 
-        return (current_model, current_clip)
+        return (current_model,)
 
 
 NODE_CLASS_MAPPINGS = {
@@ -445,37 +442,51 @@ def get_anima_tools_user_dir() -> str:
     os.makedirs(cache_root, exist_ok=True)
     return cache_root
 
-def get_lora_roots() -> list[str]:
+def get_custom_lora_dir_status() -> tuple[str, bool, str]:
+    config = load_lora_config()
+    custom_dir = config.get("custom_lora_dir", "").strip()
+    if not custom_dir:
+        return "", False, ""
+    abs_custom_dir = os.path.abspath(os.path.expanduser(custom_dir))
+    return custom_dir, os.path.isdir(abs_custom_dir), abs_custom_dir
+
+def get_lora_root_infos() -> list[dict]:
     roots = []
+
+    _, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
+    if custom_dir_valid:
+        roots.append({"path": custom_dir_abs, "source": "custom"})
+
     try:
         for path in folder_paths.get_folder_paths("loras"):
             if path and os.path.isdir(path):
-                roots.append(os.path.abspath(path))
+                roots.append({"path": os.path.abspath(path), "source": "default"})
     except Exception:
         pass
 
     fallback = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "models", "loras"))
     if os.path.isdir(fallback):
-        roots.append(fallback)
-
-    config = load_lora_config()
-    custom_dir = config.get("custom_lora_dir", "").strip()
-    if custom_dir and os.path.isdir(custom_dir):
-        roots.append(os.path.abspath(custom_dir))
+        roots.append({"path": fallback, "source": "default"})
 
     deduped = []
     seen = set()
-    for root in roots:
+    for root_info in roots:
+        root = root_info["path"]
         key = os.path.normcase(os.path.abspath(root))
         if key not in seen:
             seen.add(key)
-            deduped.append(root)
+            deduped.append(root_info)
     return deduped
+
+def get_lora_roots() -> list[str]:
+    return [root_info["path"] for root_info in get_lora_root_infos()]
 
 def scan_loras_with_info() -> list[dict]:
     results = []
     seen = set()
-    for root in get_lora_roots():
+    for root_info in get_lora_root_infos():
+        root = root_info["path"]
+        source = root_info.get("source", "default")
         for rel_path in scan_loras_in_directory(root):
             if rel_path in seen:
                 continue
@@ -483,7 +494,7 @@ def scan_loras_with_info() -> list[dict]:
             if not os.path.isfile(abs_path):
                 continue
             seen.add(rel_path)
-            results.append({"filename": rel_path, "abs_path": abs_path})
+            results.append({"filename": rel_path, "abs_path": abs_path, "source": source})
     return results
 
 def resolve_lora_abs_path(filename: str) -> str | None:
@@ -492,6 +503,12 @@ def resolve_lora_abs_path(filename: str) -> str | None:
     filename = filename.replace("\\", "/").strip()
     if not filename or filename.endswith("/"):
         return None
+
+    _, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
+    if custom_dir_valid:
+        candidate = os.path.join(custom_dir_abs, filename.replace("/", os.sep))
+        if os.path.exists(candidate):
+            return candidate
 
     try:
         abs_path = folder_paths.get_full_path("loras", filename)
@@ -571,6 +588,7 @@ async def lora_manifest_api(request):
         except (ValueError, TypeError):
             width = 320
 
+        custom_dir, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
         items = []
         for info in scan_loras_with_info():
             filename = info["filename"]
@@ -593,6 +611,7 @@ async def lora_manifest_api(request):
                 "has_preview": bool(preview_file),
                 "metadata_status": metadata_status,
                 "meta_summary": meta_summary,
+                "source": info.get("source", "default"),
                 "_preview_file": preview_file,
                 "_abs_path": abs_path,
             })
@@ -611,6 +630,9 @@ async def lora_manifest_api(request):
             "items": items,
             "count": len(items),
             "width": width,
+            "custom_lora_dir": custom_dir,
+            "custom_lora_dir_valid": custom_dir_valid,
+            "custom_lora_dir_abs": custom_dir_abs if custom_dir_valid else "",
             "generated_at": int(time.time())
         })
     except Exception as e:
@@ -636,6 +658,22 @@ async def lora_search_api(request):
     except Exception as e:
         print(f"[Anima Tools] Search API error: {e}")
         return web.json_response({"items": [], "error": str(e)}, status=500)
+
+@PromptServer.instance.routes.get("/anima-tools/lora/model-detail")
+async def lora_model_detail_api(request):
+    try:
+        model_id = str(request.query.get("id", "")).strip()
+        if not model_id or not model_id.isdigit():
+            return web.json_response({"success": False, "error": "Missing model id"}, status=400)
+
+        model = fetch_civitai_model(model_id)
+        if not model or (isinstance(model, dict) and model.get("error")):
+            return web.json_response({"success": False, "error": "Model detail not found"}, status=404)
+
+        return web.json_response({"success": True, "model": model})
+    except Exception as e:
+        print(f"[Anima Tools] Model Detail API error: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 @PromptServer.instance.routes.post("/anima-tools/lora/download")
 async def lora_download_api(request):
@@ -1075,8 +1113,12 @@ async def lora_download_status_api(request):
 @PromptServer.instance.routes.get("/anima-tools/lora/config")
 async def lora_get_config_api(request):
     try:
-        config = load_lora_config()
+        config = dict(load_lora_config())
         config["resolved_save_dir"] = get_lora_save_dir()
+        custom_dir, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
+        config["custom_lora_dir"] = custom_dir
+        config["custom_lora_dir_valid"] = custom_dir_valid
+        config["custom_lora_dir_abs"] = custom_dir_abs if custom_dir_valid else ""
         return web.json_response(config)
     except Exception as e:
         print(f"[Anima Tools] Get Config API error: {e}")
@@ -1086,14 +1128,25 @@ async def lora_get_config_api(request):
 async def lora_save_config_api(request):
     try:
         body = await request.json()
-        config = load_lora_config()
+        current_config = load_lora_config()
+        config = {
+            "custom_lora_dir": current_config.get("custom_lora_dir", ""),
+            "civitai_api_key": current_config.get("civitai_api_key", "")
+        }
         if "custom_lora_dir" in body:
             config["custom_lora_dir"] = body["custom_lora_dir"]
         if "civitai_api_key" in body:
             config["civitai_api_key"] = body["civitai_api_key"]
             
         success = save_lora_config(config)
-        return web.json_response({"success": success, "resolved_save_dir": get_lora_save_dir()})
+        custom_dir, custom_dir_valid, custom_dir_abs = get_custom_lora_dir_status()
+        return web.json_response({
+            "success": success,
+            "resolved_save_dir": get_lora_save_dir(),
+            "custom_lora_dir": custom_dir,
+            "custom_lora_dir_valid": custom_dir_valid,
+            "custom_lora_dir_abs": custom_dir_abs if custom_dir_valid else ""
+        })
     except Exception as e:
         print(f"[Anima Tools] Save Config API error: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
