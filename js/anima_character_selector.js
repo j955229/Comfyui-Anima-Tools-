@@ -3,6 +3,31 @@ import { t } from "./i18n.js";
 import { markImageLoaded, isImageLoaded } from "./anima_image_utils.js";
 import "./character_data.js";
 
+let characterOfficialDataPromise = null;
+
+async function ensureCharacterOfficialData() {
+    if (window.characterOfficialData) {
+        return window.characterOfficialData;
+    }
+    if (!characterOfficialDataPromise) {
+        const dataUrl = new URL("./character_official_data.json", import.meta.url);
+        characterOfficialDataPromise = fetch(dataUrl)
+            .then(response => response.ok ? response.json() : null)
+            .then(data => {
+                if (data && typeof data === "object") {
+                    window.characterOfficialData = data;
+                    return data;
+                }
+                return null;
+            })
+            .catch(err => {
+                console.warn("[Anima Tools] Failed to load local official character tags", err);
+                return null;
+            });
+    }
+    return characterOfficialDataPromise;
+}
+
 app.registerExtension({
     name: "AnimaCharacterTagSelector.extension",
 
@@ -21,6 +46,7 @@ app.registerExtension({
                         alert(t("Anima character database is loading, please wait a few seconds..."));
                         return;
                     }
+                    ensureCharacterOfficialData();
                     await openCharacterSelectorModal(this, characterTagsWidget);
                 });
 
@@ -47,15 +73,101 @@ app.registerExtension({
     }
 });
 
+function splitPromptTokens(value) {
+    if (Array.isArray(value)) {
+        return value.flatMap(splitPromptTokens);
+    }
+    return String(value || "")
+        .split(",")
+        .map(part => part.replace(/^_raw_:/, "").trim())
+        .filter(Boolean);
+}
+
+function normalizePromptToken(value) {
+    return String(value || "").replace(/^_raw_:/, "").trim().toLowerCase();
+}
+
+function pushUniquePromptTokens(target, seen, value) {
+    splitPromptTokens(value).forEach(token => {
+        const key = normalizePromptToken(token);
+        if (key && !seen.has(key)) {
+            seen.add(key);
+            target.push(token);
+        }
+    });
+}
+
+function getCharacterTrigger(item) {
+    if (!item) return "";
+    if (item.isCustom) return item.customContent || item.name || "";
+    const source = item._officialData || item;
+    if (source.trigger) return source.trigger;
+    if (item.copyright) return `${item.name}, ${item.copyright}`;
+    return item.name || "";
+}
+
+function getExplicitCharacterTags(item) {
+    const tags = [];
+    const seen = new Set();
+    if (!item || item.isCustom) return tags;
+    const source = item._officialData || item;
+
+    pushUniquePromptTokens(tags, seen, source.tags);
+    pushUniquePromptTokens(tags, seen, source.core_tags);
+    pushUniquePromptTokens(tags, seen, source.coreTags);
+
+    return tags;
+}
+
+function getCharacterTags(item) {
+    const tags = getExplicitCharacterTags(item);
+    const seen = new Set(tags.map(normalizePromptToken));
+    if (!item || item.isCustom) return tags;
+
+    if (tags.length === 0) {
+        pushUniquePromptTokens(tags, seen, item.gender);
+        if (item.hair) pushUniquePromptTokens(tags, seen, `${item.hair} hair`);
+        if (item.eye) pushUniquePromptTokens(tags, seen, `${item.eye} eyes`);
+    }
+
+    return tags;
+}
+
+function getCharacterPromptParts(item, includeTags = false) {
+    const parts = [];
+    const seen = new Set();
+    pushUniquePromptTokens(parts, seen, getCharacterTrigger(item));
+    if (includeTags) {
+        getCharacterTags(item).forEach(tag => pushUniquePromptTokens(parts, seen, tag));
+    }
+    return parts;
+}
+
+function formatCharacterDisplayName(item) {
+    if (!item) return "";
+    if (item.isCustom) return item.nickname || item.name || "";
+    return String(item.name || "")
+        .split(" ")
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(" ");
+}
+
 async function openCharacterSelectorModal(node, tagsWidget) {
     // 1. 解析当前节点中已经选中的 tags
     const currentTagsText = tagsWidget.value || "";
     const normalizedCurrentTagsText = currentTagsText.replace(/_raw_:/g, "");
-    const selectedCharacters = new Set(
-        normalizedCurrentTagsText.split(",")
-            .map(t => t.trim())
-            .filter(t => t.length > 0)
-    );
+    const currentTokens = splitPromptTokens(normalizedCurrentTagsText);
+    const currentTokenSet = new Set(currentTokens.map(normalizePromptToken));
+    const selectedCharacters = new Set();
+    (window.characterData || []).forEach(item => {
+        const nameKey = normalizePromptToken(item.name);
+        const triggerKeys = splitPromptTokens(getCharacterTrigger(item)).map(normalizePromptToken);
+        const matchesName = nameKey && currentTokenSet.has(nameKey);
+        const matchesTrigger = triggerKeys.length > 0 && triggerKeys.every(key => currentTokenSet.has(key));
+        if (matchesName || matchesTrigger) {
+            selectedCharacters.add(item.name);
+        }
+    });
 
     // 加载后端持久化配置
     let favoritesConfig = {
@@ -85,7 +197,9 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
     // 匹配已经勾选的自定义项
     favoriteItems.forEach(fi => {
-        if (fi.isCustom && fi.customContent && normalizedCurrentTagsText.includes(fi.customContent.trim())) {
+        const customKeys = splitPromptTokens(fi.customContent).map(normalizePromptToken);
+        const matchesCustom = customKeys.length > 0 && customKeys.every(key => currentTokenSet.has(key));
+        if (fi.isCustom && fi.customContent && (matchesCustom || normalizedCurrentTagsText.includes(fi.customContent.trim()))) {
             selectedCharacters.add(fi.name);
         }
     });
@@ -155,13 +269,19 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         favoritesConfig.character.items = favoriteItems;
         
         try {
-            await fetch("/anima-tools/favorites", {
+            const response = await fetch("/anima-tools/favorites", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(favoritesConfig)
             });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            return true;
         } catch (e) {
             console.error("Failed to save favorites", e);
+            alert(t("Failed to save favorites"));
+            return false;
         }
     }
 
@@ -407,11 +527,21 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         const confirm = document.createElement("button");
         confirm.innerText = t("OK");
         confirm.style.cssText = "background: #db2777; border: none; color: #ffffff; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;";
-        confirm.onclick = () => {
+        confirm.onclick = async () => {
             const val = input.value.trim();
             if (val) {
-                callback(val);
-                dialog.remove();
+                const prevText = confirm.innerText;
+                confirm.disabled = true;
+                cancel.disabled = true;
+                confirm.innerText = t("Saving...");
+                const shouldClose = await callback(val);
+                if (shouldClose !== false) {
+                    dialog.remove();
+                } else {
+                    confirm.disabled = false;
+                    cancel.disabled = false;
+                    confirm.innerText = prevText;
+                }
             }
         };
         
@@ -505,12 +635,22 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         const confirm = document.createElement("button");
         confirm.innerText = t("Create");
         confirm.style.cssText = "background: #db2777; border: none; color: #ffffff; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;";
-        confirm.onclick = () => {
+        confirm.onclick = async () => {
             const titleVal = titleInput.value.trim();
             const contentVal = contentInput.value.trim();
             if (titleVal && contentVal) {
-                callback(titleVal, contentVal);
-                dialog.remove();
+                const prevText = confirm.innerText;
+                confirm.disabled = true;
+                cancel.disabled = true;
+                confirm.innerText = t("Saving...");
+                const shouldClose = await callback(titleVal, contentVal);
+                if (shouldClose !== false) {
+                    dialog.remove();
+                } else {
+                    confirm.disabled = false;
+                    cancel.disabled = false;
+                    confirm.innerText = prevText;
+                }
             } else {
                 alert(t("Title and Content cannot be empty!"));
             }
@@ -551,6 +691,124 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     function getImgUrl(name, copyright) {
         const rawName = copyright ? `${name}, ${copyright}` : name;
         return `https://blobs.animadex.net/Outputs/thumbs/${encodeURIComponent(rawName)}.webp`;
+    }
+
+    const officialCharacterCache = new Map();
+    const officialCharacterPending = new Map();
+    let activeCharacterTagsTooltip = null;
+
+    function getCharacterCacheKey(item) {
+        return `${normalizePromptToken(item?.name)}||${normalizePromptToken(item?.copyright)}`;
+    }
+
+    function getLocalOfficialCharacterData(item) {
+        if (!item || item.isCustom || !window.characterOfficialData) return null;
+        const key = getCharacterCacheKey(item);
+        return window.characterOfficialData[key] || null;
+    }
+
+    function hideCharacterTagsTooltip() {
+        if (activeCharacterTagsTooltip) {
+            activeCharacterTagsTooltip.classList.remove("is-visible");
+            activeCharacterTagsTooltip = null;
+        }
+    }
+
+    async function fetchOfficialCharacterData(item) {
+        if (!item || item.isCustom || getExplicitCharacterTags(item).length > 0) {
+            return item?._officialData || item || null;
+        }
+        if (!window.characterOfficialData) {
+            await ensureCharacterOfficialData();
+        }
+        const localOfficial = getLocalOfficialCharacterData(item);
+        if (localOfficial) {
+            item._officialData = localOfficial;
+            return localOfficial;
+        }
+        const key = getCharacterCacheKey(item);
+        if (officialCharacterCache.has(key)) {
+            item._officialData = officialCharacterCache.get(key);
+            return item._officialData;
+        }
+        if (officialCharacterPending.has(key)) {
+            return officialCharacterPending.get(key);
+        }
+
+        const query = new URLSearchParams({
+            name: item.name || "",
+            copyright: item.copyright || ""
+        });
+        const request = fetch(`/anima-tools/character/official?${query.toString()}`)
+            .then(response => response.ok ? response.json() : null)
+            .then(payload => {
+                if (payload?.success && payload.item) {
+                    const official = {
+                        ...payload.item,
+                        tags: Array.isArray(payload.item.tags) ? payload.item.tags : splitPromptTokens(payload.item.tags)
+                    };
+                    officialCharacterCache.set(key, official);
+                    item._officialData = official;
+                    return official;
+                }
+                return null;
+            })
+            .catch(err => {
+                console.warn("[Anima Tools] Failed to load official character tags", item.name, err);
+                return null;
+            })
+            .finally(() => {
+                officialCharacterPending.delete(key);
+            });
+        officialCharacterPending.set(key, request);
+        return request;
+    }
+
+    function createCharacterTagsOverlay(item) {
+        const overlay = document.createElement("div");
+        overlay.className = "anima-character-card-tags";
+        overlay.innerHTML = `
+            <div class="anima-character-card-tags-header"></div>
+            <div class="anima-character-card-tags-chips"></div>
+        `;
+        renderCharacterTagsOverlay(item, overlay, "idle");
+        return overlay;
+    }
+
+    function renderCharacterTagsOverlay(item, overlay, state = "idle") {
+        const headerEl = overlay.querySelector(".anima-character-card-tags-header");
+        const chipsEl = overlay.querySelector(".anima-character-card-tags-chips");
+        const explicitTags = getExplicitCharacterTags(item);
+        const tags = explicitTags.length > 0 || state === "error" ? getCharacterTags(item) : [];
+
+        chipsEl.innerHTML = "";
+
+        if (state === "loading" && explicitTags.length === 0) {
+            headerEl.innerText = t("Loading official tags...");
+            const empty = document.createElement("span");
+            empty.className = "anima-character-card-tags-empty";
+            empty.innerText = t("Loading official tags...");
+            chipsEl.appendChild(empty);
+            return;
+        }
+
+        headerEl.innerText = state === "error" && explicitTags.length === 0
+            ? `${t("Official tags unavailable")} · ${tags.length}`
+            : `${t("Tags")} · ${tags.length}`;
+        if (tags.length > 0) {
+            tags.forEach(tagText => {
+                const chip = document.createElement("span");
+                chip.className = "anima-character-card-tag-chip";
+                chip.innerText = tagText;
+                chip.title = tagText;
+                chipsEl.appendChild(chip);
+            });
+        } else {
+            const empty = document.createElement("span");
+            empty.className = "anima-character-card-tags-empty";
+            empty.innerText = state === "error" ? t("Official tags unavailable") : t("No tags available");
+            chipsEl.appendChild(empty);
+        }
     }
 
     // 保存收藏列表到本地
@@ -821,6 +1079,60 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         }
         .sidebar-section-arrow.collapsed {
             transform: rotate(-90deg);
+        }
+        .anima-character-card-tags {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            padding: 42px 12px 72px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            background: linear-gradient(to bottom, rgba(8, 8, 12, 0.94) 0%, rgba(13, 13, 19, 0.84) 56%, rgba(13, 13, 19, 0.14) 100%);
+            opacity: 0;
+            transform: translateY(8px);
+            pointer-events: none;
+            transition: opacity 0.14s ease, transform 0.14s ease;
+            box-sizing: border-box;
+        }
+        .anima-character-card-tags.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .anima-character-card-tags-header {
+            color: #f9a8d4;
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: 0;
+            text-transform: uppercase;
+            line-height: 1.3;
+            margin-bottom: 2px;
+        }
+        .anima-character-card-tags-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+            overflow: hidden;
+        }
+        .anima-character-card-tag-chip {
+            max-width: 100%;
+            color: #f3f4f6;
+            background: rgba(244, 114, 182, 0.14);
+            border: 1px solid rgba(244, 114, 182, 0.24);
+            border-radius: 7px;
+            padding: 2px 6px;
+            font-size: 10px;
+            font-weight: 650;
+            line-height: 1.25;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            box-sizing: border-box;
+        }
+        .anima-character-card-tags-empty {
+            color: #a1a1aa;
+            font-size: 11px;
+            line-height: 1.35;
         }
     `;
     document.head.appendChild(styleSheet);
@@ -1128,6 +1440,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         align-content: start;
     `;
     listContainer.onscroll = () => {
+        hideCharacterTagsTooltip();
         localStorage.setItem(SCROLL_STORAGE_KEY, listContainer.scrollTop);
     };
     gridArea.appendChild(listContainer);
@@ -1267,29 +1580,42 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     cancelBtn.innerText = t("Cancel");
     cancelBtn.onclick = () => closeModal();
 
-    const applyBtn = document.createElement("button");
-    applyBtn.className = "anima-btn anima-btn-primary";
-    applyBtn.innerText = t("Confirm & Apply");
-    applyBtn.onclick = () => {
-        applySelectionAndClose();
+    const applyTriggerBtn = document.createElement("button");
+    applyTriggerBtn.className = "anima-btn";
+    applyTriggerBtn.innerText = t("Apply Trigger");
+    applyTriggerBtn.onclick = async () => {
+        await applySelectionAndClose(false);
+    };
+
+    const applyTriggerTagsBtn = document.createElement("button");
+    applyTriggerTagsBtn.className = "anima-btn anima-btn-primary";
+    applyTriggerTagsBtn.innerText = t("Apply Trigger + Tags");
+    applyTriggerTagsBtn.onclick = async () => {
+        await applySelectionAndClose(true);
     };
 
     // 确认应用并关闭弹窗
-    function applySelectionAndClose() {
-        let resultTags = [];
-        selectedCharacters.forEach(selName => {
+    async function applySelectionAndClose(includeTags = false) {
+        const characterMap = new Map((window.characterData || []).map(item => [item.name, item]));
+        const selectedItems = Array.from(selectedCharacters).map(selName => {
             const custItem = favoriteItems.find(fi => fi.isCustom && fi.name === selName);
-            if (custItem) {
-                const subTags = custItem.customContent.split(",");
-                subTags.forEach(st => {
-                    const stClean = st.strip ? st.strip() : st.trim();
-                    if (stClean) {
-                        resultTags.push(stClean);
-                    }
-                });
-            } else {
-                resultTags.push(selName);
-            }
+            return custItem || characterMap.get(selName) || { name: selName };
+        });
+
+        applyTriggerBtn.disabled = true;
+        applyTriggerTagsBtn.disabled = true;
+        if (includeTags) {
+            applyTriggerTagsBtn.innerText = t("Loading official tags...");
+        } else {
+            applyTriggerBtn.innerText = t("Loading official tags...");
+        }
+
+        await Promise.all(selectedItems.map(item => fetchOfficialCharacterData(item)));
+
+        const resultTags = [];
+        const seen = new Set();
+        selectedItems.forEach(item => {
+            getCharacterPromptParts(item, includeTags).forEach(tag => pushUniquePromptTokens(resultTags, seen, tag));
         });
         
         let resultString = resultTags.join(", ");
@@ -1312,7 +1638,8 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     }
 
     footerButtons.appendChild(cancelBtn);
-    footerButtons.appendChild(applyBtn);
+    footerButtons.appendChild(applyTriggerBtn);
+    footerButtons.appendChild(applyTriggerTagsBtn);
     footer.appendChild(countLabel);
     footer.appendChild(footerButtons);
     modalContainer.appendChild(footer);
@@ -1431,10 +1758,13 @@ async function openCharacterSelectorModal(node, tagsWidget) {
         };
         addBtn.onclick = (e) => {
             e.stopPropagation();
-            openGroupCreateModal((groupName) => {
+            openGroupCreateModal(async (groupName) => {
                 const newId = "group_" + Date.now();
                 groups.push({ id: newId, name: groupName, isSystem: false });
-                saveFavorites();
+                if (!(await saveFavorites())) {
+                    groups = groups.filter(group => group.id !== newId);
+                    return false;
+                }
                 renderSidebar();
             });
         };
@@ -1503,9 +1833,13 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                 editBtn.onmouseleave = () => editBtn.style.opacity = "0.6";
                 editBtn.onclick = (e) => {
                     e.stopPropagation();
-                    openGroupRenameModal(g.name, (newName) => {
+                    openGroupRenameModal(g.name, async (newName) => {
+                        const oldName = g.name;
                         g.name = newName;
-                        saveFavorites();
+                        if (!(await saveFavorites())) {
+                            g.name = oldName;
+                            return false;
+                        }
                         renderSidebar();
                     });
                 };
@@ -1956,6 +2290,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     }
 
     function renderCurrentPage() {
+        hideCharacterTagsTooltip();
         listContainer.innerHTML = "";
         
         const isCustomGroup = activeFilters.type !== "all" && activeFilters.type !== "default";
@@ -2032,7 +2367,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
             
             createCard.onclick = (e) => {
                 e.stopPropagation();
-                openCustomItemCreateModal((title, content) => {
+                openCustomItemCreateModal(async (title, content) => {
                     const newItem = {
                         id: "custom_" + Date.now(),
                         name: title,
@@ -2042,7 +2377,10 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                         customContent: content
                     };
                     favoriteItems.push(newItem);
-                    saveFavorites();
+                    if (!(await saveFavorites())) {
+                        favoriteItems = favoriteItems.filter(fi => fi.id !== newItem.id);
+                        return false;
+                    }
                     triggerFilter();
                     renderSidebar();
                 });
@@ -2074,6 +2412,23 @@ async function openCharacterSelectorModal(node, tagsWidget) {
                 box-sizing: border-box !important;
                 box-shadow: ${isSelected ? '0 10px 25px rgba(219, 39, 119, 0.35)' : '0 4px 12px rgba(0,0,0,0.15)'} !important;
             `;
+            const tagsOverlay = createCharacterTagsOverlay(item);
+            card.appendChild(tagsOverlay);
+            card.addEventListener("mouseenter", async () => {
+                hideCharacterTagsTooltip();
+                activeCharacterTagsTooltip = tagsOverlay;
+                tagsOverlay.classList.add("is-visible");
+                if (getExplicitCharacterTags(item).length === 0 && !item.isCustom) {
+                    renderCharacterTagsOverlay(item, tagsOverlay, "loading");
+                    const official = await fetchOfficialCharacterData(item);
+                    if (activeCharacterTagsTooltip === tagsOverlay) {
+                        renderCharacterTagsOverlay(item, tagsOverlay, official ? "idle" : "error");
+                    }
+                } else {
+                    renderCharacterTagsOverlay(item, tagsOverlay, "idle");
+                }
+            });
+            card.addEventListener("mouseleave", hideCharacterTagsTooltip);
             
             const checkbox = document.createElement("div");
             checkbox.style.cssText = `
@@ -2531,6 +2886,7 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
     // 隐藏/关闭弹窗
     function closeModal() {
+        hideCharacterTagsTooltip();
         charImageObserver.disconnect();
         modalOverlay.remove();
     }

@@ -125,13 +125,19 @@ async function openArtistSelectorModal(node, tagsWidget) {
         favoritesConfig.artist.items = favoriteItems;
         
         try {
-            await fetch("/anima-tools/favorites", {
+            const response = await fetch("/anima-tools/favorites", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(favoritesConfig)
             });
+            if (!response.ok) {
+                throw new Error(await response.text());
+            }
+            return true;
         } catch (e) {
             console.error("Failed to save favorites", e);
+            alert(t("Failed to save favorites"));
+            return false;
         }
     }
 
@@ -376,11 +382,21 @@ async function openArtistSelectorModal(node, tagsWidget) {
         const confirm = document.createElement("button");
         confirm.innerText = t("OK");
         confirm.style.cssText = "background: #0b8ce9; border: none; color: #ffffff; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;";
-        confirm.onclick = () => {
+        confirm.onclick = async () => {
             const val = input.value.trim();
             if (val) {
-                callback(val);
-                dialog.remove();
+                const prevText = confirm.innerText;
+                confirm.disabled = true;
+                cancel.disabled = true;
+                confirm.innerText = t("Saving...");
+                const shouldClose = await callback(val);
+                if (shouldClose !== false) {
+                    dialog.remove();
+                } else {
+                    confirm.disabled = false;
+                    cancel.disabled = false;
+                    confirm.innerText = prevText;
+                }
             }
         };
         
@@ -474,12 +490,22 @@ async function openArtistSelectorModal(node, tagsWidget) {
         const confirm = document.createElement("button");
         confirm.innerText = t("Create");
         confirm.style.cssText = "background: #0b8ce9; border: none; color: #ffffff; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600;";
-        confirm.onclick = () => {
+        confirm.onclick = async () => {
             const titleVal = titleInput.value.trim();
             const contentVal = contentInput.value.trim();
             if (titleVal && contentVal) {
-                callback(titleVal, contentVal);
-                dialog.remove();
+                const prevText = confirm.innerText;
+                confirm.disabled = true;
+                cancel.disabled = true;
+                confirm.innerText = t("Saving...");
+                const shouldClose = await callback(titleVal, contentVal);
+                if (shouldClose !== false) {
+                    dialog.remove();
+                } else {
+                    confirm.disabled = false;
+                    cancel.disabled = false;
+                    confirm.innerText = prevText;
+                }
             } else {
                 alert(t("Title and Content cannot be empty!"));
             }
@@ -1330,10 +1356,13 @@ async function openArtistSelectorModal(node, tagsWidget) {
             };
             addGroupBtn.onclick = (e) => {
                 e.stopPropagation();
-                openGroupCreateModal((groupName) => {
+                openGroupCreateModal(async (groupName) => {
                     const newId = "group_" + Date.now();
                     groups.push({ id: newId, name: groupName, isSystem: false });
-                    saveFavorites();
+                    if (!(await saveFavorites())) {
+                        groups = groups.filter(group => group.id !== newId);
+                        return false;
+                    }
                     renderSidebar();
                 });
             };
@@ -1396,9 +1425,13 @@ async function openArtistSelectorModal(node, tagsWidget) {
                 editBtn.onmouseleave = () => editBtn.style.opacity = "0.6";
                 editBtn.onclick = (e) => {
                     e.stopPropagation();
-                    openGroupRenameModal(g.name, (newName) => {
+                    openGroupRenameModal(g.name, async (newName) => {
+                        const oldName = g.name;
                         g.name = newName;
-                        saveFavorites();
+                        if (!(await saveFavorites())) {
+                            g.name = oldName;
+                            return false;
+                        }
                         renderSidebar();
                     });
                 };
@@ -1698,7 +1731,7 @@ async function openArtistSelectorModal(node, tagsWidget) {
             
             createCard.onclick = (e) => {
                 e.stopPropagation();
-                openCustomItemCreateModal((title, content) => {
+                openCustomItemCreateModal(async (title, content) => {
                     const newItem = {
                         id: "custom_" + Date.now(),
                         name: title,
@@ -1708,7 +1741,10 @@ async function openArtistSelectorModal(node, tagsWidget) {
                         customContent: content
                     };
                     favoriteItems.push(newItem);
-                    saveFavorites();
+                    if (!(await saveFavorites())) {
+                        favoriteItems = favoriteItems.filter(fi => fi.id !== newItem.id);
+                        return false;
+                    }
                     triggerFilter();
                     renderSidebar();
                 });

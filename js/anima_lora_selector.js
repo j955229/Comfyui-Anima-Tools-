@@ -3332,11 +3332,14 @@ async function openLoraSelectorModal(node) {
             
             fullFavs.lora = favoritesConfig.lora;
             
-            await fetch("/anima-tools/favorites", {
+            const saveResp = await fetch("/anima-tools/favorites", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(fullFavs)
             });
+            if (!saveResp.ok) {
+                throw new Error(await saveResp.text());
+            }
         } catch (e) {
             console.error("Failed to save favorites to server", e);
         }

@@ -346,10 +346,8 @@ def get_favorites_path():
     os.makedirs(user_dir, exist_ok=True)
     return os.path.join(user_dir, "anima_tools_favorites.json")
 
-@PromptServer.instance.routes.get("/anima-tools/favorites")
-async def get_favorites_api(request):
-    path = get_favorites_path()
-    default_data = {
+def get_default_favorites_data():
+    return {
         "artist": {
             "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
             "items": []
@@ -363,46 +361,187 @@ async def get_favorites_api(request):
             "items": []
         }
     }
-    
+
+def normalize_favorites_data(data):
+    default_data = get_default_favorites_data()
+    if not isinstance(data, dict):
+        data = {}
+    normalized = {}
+    for key in ["artist", "character", "lora"]:
+        section = data.get(key)
+        if not isinstance(section, dict):
+            section = {}
+        groups = section.get("groups")
+        if not isinstance(groups, list):
+            groups = default_data[key]["groups"].copy()
+        elif not any(isinstance(g, dict) and g.get("id") == "default" for g in groups):
+            groups = [default_data[key]["groups"][0], *groups]
+        items = section.get("items")
+        if not isinstance(items, list):
+            items = []
+        normalized[key] = {"groups": groups, "items": items}
+    return normalized
+
+def load_favorites_data():
+    path = get_favorites_path()
     if not os.path.exists(path):
-        return web.json_response(default_data)
-        
+        return get_default_favorites_data()
     try:
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if not isinstance(data, dict):
-                data = {}
-            for key in ["artist", "character", "lora"]:
-                if key not in data or not isinstance(data[key], dict):
-                    data[key] = default_data[key]
-                if "groups" not in data[key] or not isinstance(data[key]["groups"], list):
-                    data[key]["groups"] = default_data[key]["groups"]
-                if "items" not in data[key] or not isinstance(data[key]["items"], list):
-                    data[key]["items"] = []
-                # 确保默认收藏分组存在
-                if not any(g.get("id") == "default" for g in data[key]["groups"]):
-                    data[key]["groups"].insert(0, default_data[key]["groups"][0])
-            return web.json_response(data)
+            content = f.read().strip()
+        if not content:
+            return get_default_favorites_data()
+        return normalize_favorites_data(json.loads(content))
     except Exception as e:
         print(f"[Anima Tools] Error reading favorites: {e}")
-        return web.json_response(default_data)
+        return get_default_favorites_data()
+
+def merge_favorites_data(existing, incoming):
+    merged = normalize_favorites_data(existing)
+    if not isinstance(incoming, dict):
+        raise ValueError("Favorites payload must be a JSON object")
+    for key in ["artist", "character", "lora"]:
+        if key in incoming:
+            section = incoming.get(key)
+            if not isinstance(section, dict):
+                raise ValueError(f"Favorites section '{key}' must be an object")
+            merged[key] = normalize_favorites_data({key: section})[key]
+    return merged
+
+@PromptServer.instance.routes.get("/anima-tools/favorites")
+async def get_favorites_api(request):
+    return web.json_response(load_favorites_data())
 
 @PromptServer.instance.routes.post("/anima-tools/favorites")
 async def save_favorites_api(request):
     try:
-        body = await request.json()
+        raw_body = await request.text()
+        if not raw_body.strip():
+            return web.json_response({"success": False, "error": "Empty favorites payload"}, status=400)
+        try:
+            body = json.loads(raw_body)
+        except json.JSONDecodeError as decode_error:
+            return web.json_response(
+                {"success": False, "error": f"Invalid favorites payload: {decode_error}"},
+                status=400,
+            )
         path = get_favorites_path()
+        data = merge_favorites_data(load_favorites_data(), body)
+        if os.path.exists(path):
+            backup_path = path + ".bak"
+            try:
+                with open(path, "r", encoding="utf-8") as src, open(backup_path, "w", encoding="utf-8") as dst:
+                    dst.write(src.read())
+            except Exception as backup_error:
+                print(f"[Anima Tools] Warning: failed to backup favorites: {backup_error}")
         
         # 原子写入：先写入 .tmp 文件再覆盖
         tmp_path = path + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(body, f, indent=2, ensure_ascii=False)
+            json.dump(data, f, indent=2, ensure_ascii=False)
             
         os.replace(tmp_path, path)
-        return web.json_response({"success": True})
+        return web.json_response({"success": True, "path": path})
     except Exception as e:
         print(f"[Anima Tools] Error saving favorites: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
+
+
+ANIMADEX_CHARACTER_SEARCH_API = "https://animadex.net/api/characters/search"
+_animadex_character_cache = {}
+_animadex_character_cache_lock = threading.Lock()
+_animadex_character_cache_ttl = 60 * 60 * 12
+
+def _normalize_animadex_text(value: str) -> str:
+    return " ".join(str(value or "").strip().lower().replace("_", " ").split())
+
+def _animadex_character_cache_key(name: str, copyright: str) -> str:
+    return f"{_normalize_animadex_text(name)}||{_normalize_animadex_text(copyright)}"
+
+def _select_animadex_character_result(results: list, name: str, copyright: str) -> dict | None:
+    if not results:
+        return None
+
+    target_name = _normalize_animadex_text(name)
+    target_copyright = _normalize_animadex_text(copyright)
+    target_trigger = _normalize_animadex_text(f"{name}, {copyright}" if copyright else name)
+    target_slug = target_name.replace(" ", "_")
+
+    for item in results:
+        trigger = _normalize_animadex_text(item.get("trigger", ""))
+        item_name = _normalize_animadex_text(item.get("name", ""))
+        item_copyright = _normalize_animadex_text(item.get("copyright", ""))
+        item_slug = _normalize_animadex_text(item.get("slug", "")).replace(" ", "_")
+        if trigger == target_trigger:
+            return item
+        if item_slug == target_slug and (not target_copyright or item_copyright == target_copyright):
+            return item
+        if item_name == target_name and (not target_copyright or item_copyright == target_copyright):
+            return item
+
+    return results[0]
+
+def _compact_animadex_character_item(item: dict | None) -> dict | None:
+    if not item:
+        return None
+    return {
+        "slug": item.get("slug", ""),
+        "name": item.get("name", ""),
+        "copyright": item.get("copyright", ""),
+        "copyright_name": item.get("copyright_name", ""),
+        "trigger": item.get("trigger", ""),
+        "tags": item.get("tags") if isinstance(item.get("tags"), list) else [],
+        "count": item.get("count", 0),
+        "url": item.get("url", ""),
+        "thumb_url": item.get("thumb_url", ""),
+        "img_url": item.get("img_url", ""),
+    }
+
+def _fetch_animadex_character(name: str, copyright: str) -> dict | None:
+    query_text = f"{name}, {copyright}" if copyright else name
+    params = urllib.parse.urlencode({
+        "q": query_text,
+        "sort": "count",
+        "page": "1",
+    })
+    url = f"{ANIMADEX_CHARACTER_SEARCH_API}?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "ComfyUI-Anima-Tools/1.0 (+https://github.com/zhangp365/Comfyui-Anima-Tools)",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=12) as resp:
+        charset = resp.headers.get_content_charset() or "utf-8"
+        data = json.loads(resp.read().decode(charset, errors="replace"))
+    return _compact_animadex_character_item(_select_animadex_character_result(data.get("results") or [], name, copyright))
+
+@PromptServer.instance.routes.get("/anima-tools/character/official")
+async def get_official_character_api(request):
+    name = str(request.query.get("name", "")).strip()
+    copyright = str(request.query.get("copyright", "")).strip()
+    if not name:
+        return web.json_response({"success": False, "error": "Missing character name"}, status=400)
+    if len(name) > 160 or len(copyright) > 160:
+        return web.json_response({"success": False, "error": "Query is too long"}, status=400)
+
+    cache_key = _animadex_character_cache_key(name, copyright)
+    now = time.time()
+    with _animadex_character_cache_lock:
+        cached = _animadex_character_cache.get(cache_key)
+        if cached and now - cached.get("time", 0) < _animadex_character_cache_ttl:
+            return web.json_response(cached["payload"])
+
+    try:
+        item = _fetch_animadex_character(name, copyright)
+        payload = {"success": bool(item), "item": item}
+        with _animadex_character_cache_lock:
+            _animadex_character_cache[cache_key] = {"time": now, "payload": payload}
+        return web.json_response(payload)
+    except Exception as e:
+        print(f"[Anima Tools] Error fetching AnimaDex official character tags: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=502)
 
 
 # ----------------- LoRA 相关的 API 路由 -----------------
