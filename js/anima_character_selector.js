@@ -1101,6 +1101,32 @@ async function openCharacterSelectorModal(node, tagsWidget) {
             color: #f472b6 !important;
             font-weight: 700 !important;
         }
+        .sidebar-clear-filters-btn {
+            width: calc(100% - 16px);
+            margin: 0 8px 12px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: rgba(255, 255, 255, 0.035);
+            color: #a1a1aa;
+            font-size: 12.5px;
+            font-weight: 750;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            transition: all 0.18s ease;
+        }
+        .sidebar-clear-filters-btn:hover:not(:disabled) {
+            background: rgba(219, 39, 119, 0.13);
+            border-color: rgba(219, 39, 119, 0.32);
+            color: #f9a8d4;
+        }
+        .sidebar-clear-filters-btn:disabled {
+            opacity: 0.42;
+            cursor: not-allowed;
+        }
         
         /* 分页器按钮样式 */
         .anima-pagination {
@@ -1910,6 +1936,20 @@ async function openCharacterSelectorModal(node, tagsWidget) {
     function renderSidebar() {
         sidebarList.innerHTML = "";
 
+        const clearFiltersBtn = document.createElement("button");
+        clearFiltersBtn.type = "button";
+        clearFiltersBtn.className = "sidebar-clear-filters-btn";
+        clearFiltersBtn.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>${t("Clear Filters")}</span>
+        `;
+        clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        clearFiltersBtn.onclick = clearSidebarFilters;
+        sidebarList.appendChild(clearFiltersBtn);
+
         // 1. 获取各个分组的折叠状态 (默认全部折叠，localStorage 记录的 "false" 代表展开)
         const foldStates = {
             gender: localStorage.getItem("anima-char-fold-gender") !== "false",
@@ -2333,6 +2373,33 @@ async function openCharacterSelectorModal(node, tagsWidget) {
 
         seriesContainer.appendChild(seriesContentEl);
         sidebarList.appendChild(seriesContainer);
+    }
+
+    function hasActiveSidebarFilters() {
+        return activeFilters.type !== "all" ||
+            !!activeFilters.gender ||
+            !!activeFilters.hair ||
+            !!activeFilters.eye ||
+            !!activeFilters.series;
+    }
+
+    function clearSidebarFilters() {
+        if (!hasActiveSidebarFilters()) return;
+        activeFilters = {
+            type: "all",
+            gender: null,
+            hair: null,
+            eye: null,
+            series: null
+        };
+        localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(activeFilters));
+        currentPage = 1;
+        localStorage.setItem(PAGE_STORAGE_KEY, 1);
+        lastScrollTop = 0;
+        localStorage.setItem(SCROLL_STORAGE_KEY, 0);
+        renderSidebar();
+        triggerFilter();
+        listContainer.scrollTop = 0;
     }
 
     // 切换分类侧边栏 (支持联合多维过滤)

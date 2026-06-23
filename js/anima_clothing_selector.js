@@ -234,6 +234,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
     const SIDEBAR_SCROLL_STORAGE_KEY = "anima-clothing-selector-sidebar-scroll";
     const DISPLAY_LANG_STORAGE_KEY = "anima-clothing-selector-display-lang";
     const FILTER_STORAGE_KEY = "anima-clothing-selector-filters";
+    const COLLECTIONS_COLLAPSE_STORAGE_KEY = "anima-clothing-selector-collections-collapsed";
 
     let activeSort = localStorage.getItem(SORT_STORAGE_KEY) || "id-asc";
     let displayLang = localStorage.getItem(DISPLAY_LANG_STORAGE_KEY) || "bilingual";
@@ -243,6 +244,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
     let totalPages = 1;
     let lastScrollTop = parseInt(localStorage.getItem(SCROLL_STORAGE_KEY), 10) || 0;
     let lastSidebarScrollTop = parseInt(localStorage.getItem(SIDEBAR_SCROLL_STORAGE_KEY), 10) || 0;
+    let collectionsCollapsed = localStorage.getItem(COLLECTIONS_COLLAPSE_STORAGE_KEY) === "true";
 
     const activeFilters = {
         categories: new Set(),
@@ -496,6 +498,89 @@ async function openClothingSelectorModal(node, tagsWidget) {
             background: rgba(219,39,119,0.14);
             border-color: rgba(219,39,119,0.34);
             color: #f9a8d4;
+        }
+        .anima-clothing-clear-filters-btn {
+            width: calc(100% - 16px);
+            margin: 0 8px 12px;
+            padding: 9px 12px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.035);
+            color: #a1a1aa;
+            font-size: 12.5px;
+            font-weight: 750;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 7px;
+            transition: all 0.18s ease;
+        }
+        .anima-clothing-clear-filters-btn:hover:not(:disabled) {
+            background: rgba(219,39,119,0.13);
+            border-color: rgba(219,39,119,0.32);
+            color: #f9a8d4;
+        }
+        .anima-clothing-clear-filters-btn:disabled {
+            opacity: 0.42;
+            cursor: not-allowed;
+        }
+        .anima-clothing-section-header {
+            color: #71717a;
+            font-size: 11px;
+            font-weight: 850;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin: 14px 8px 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        .anima-clothing-section-header.foldable {
+            cursor: pointer;
+        }
+        .anima-clothing-section-header.foldable:hover {
+            color: #f9a8d4;
+        }
+        .anima-clothing-section-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .anima-clothing-section-spacer {
+            flex: 1;
+        }
+        .anima-clothing-section-icon-btn {
+            width: 20px;
+            height: 20px;
+            border-radius: 6px;
+            border: 1px solid rgba(219,39,119,0.18);
+            background: rgba(219,39,119,0.08);
+            color: #f472b6;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.16s ease;
+            padding: 0;
+            flex: 0 0 auto;
+        }
+        .anima-clothing-section-icon-btn:hover {
+            background: rgba(219,39,119,0.18);
+            border-color: rgba(219,39,119,0.34);
+            color: #fff;
+        }
+        .anima-clothing-section-arrow {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.18s ease;
+            flex: 0 0 auto;
+        }
+        .anima-clothing-section-arrow.collapsed {
+            transform: rotate(-90deg);
         }
         .anima-clothing-check-row {
             display: flex;
@@ -1087,72 +1172,80 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     function renderSidebar() {
         sidebar.innerHTML = "";
-        sidebar.appendChild(sectionTitle(t("Collections")));
+        const clearFiltersBtn = createEl("button", "anima-clothing-clear-filters-btn");
+        clearFiltersBtn.type = "button";
+        clearFiltersBtn.innerHTML = `
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+            <span>${t("Clear Filters")}</span>
+        `;
+        clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        clearFiltersBtn.onclick = clearSidebarFilters;
+        sidebar.appendChild(clearFiltersBtn);
 
-        const allItem = sidebarItem(t("All Clothing"), activeFilters.collection === "all", clothingData.length);
-        allItem.onclick = () => switchCollection("all");
-        sidebar.appendChild(allItem);
+        sidebar.appendChild(collectionsSectionHeader());
 
-        const defaultCount = favoriteItems.filter(item => item.groupIds?.includes("default")).length;
-        const defaultItem = sidebarItem(t("My Favorites"), activeFilters.collection === "default", defaultCount);
-        defaultItem.onclick = () => switchCollection("default");
-        sidebar.appendChild(defaultItem);
+        const collectionsContent = createEl("div");
+        collectionsContent.style.cssText = collectionsCollapsed ? "display: none;" : "display: flex; flex-direction: column;";
+        if (!collectionsCollapsed) {
+            const allItem = sidebarItem(t("All Clothing"), activeFilters.collection === "all", clothingData.length);
+            allItem.onclick = () => switchCollection("all");
+            collectionsContent.appendChild(allItem);
 
-        groups.filter(group => group.id !== "default").forEach(group => {
-            const groupCount = favoriteItems.filter(item => item.groupIds?.includes(group.id)).length;
-            const row = sidebarItem(group.name, activeFilters.collection === group.id, groupCount);
-            row.onclick = () => switchCollection(group.id);
-            const tools = createEl("span");
-            tools.style.cssText = "display: inline-flex; gap: 5px;";
-            const rename = createEl("button");
-            rename.title = t("Rename Group");
-            rename.innerHTML = editIcon();
-            rename.style.cssText = miniToolStyle();
-            rename.onclick = (event) => {
-                event.stopPropagation();
-                openTextInputModal(t("Rename Group"), t("Enter new group name..."), group.name, async value => {
-                    group.name = value;
+            const defaultCount = favoriteItems.filter(item => item.groupIds?.includes("default")).length;
+            const defaultItem = sidebarItem(t("My Favorites"), activeFilters.collection === "default", defaultCount);
+            defaultItem.onclick = () => switchCollection("default");
+            collectionsContent.appendChild(defaultItem);
+
+            groups.filter(group => group.id !== "default").forEach(group => {
+                const groupCount = favoriteItems.filter(item => item.groupIds?.includes(group.id)).length;
+                const row = sidebarItem(group.name, activeFilters.collection === group.id, groupCount);
+                row.onclick = () => switchCollection(group.id);
+                const tools = createEl("span");
+                tools.style.cssText = "display: inline-flex; gap: 5px;";
+                const rename = createEl("button");
+                rename.title = t("Rename Group");
+                rename.innerHTML = editIcon();
+                rename.style.cssText = miniToolStyle();
+                rename.onclick = (event) => {
+                    event.stopPropagation();
+                    openTextInputModal(t("Rename Group"), t("Enter new group name..."), group.name, async value => {
+                        group.name = value;
+                        await saveFavorites();
+                        renderSidebar();
+                        return true;
+                    });
+                };
+                const del = createEl("button");
+                del.title = t("Delete Group");
+                del.innerHTML = trashIcon(12);
+                del.style.cssText = miniToolStyle("#fca5a5");
+                del.onclick = async (event) => {
+                    event.stopPropagation();
+                    if (!confirm(t("Are you sure you want to delete this group? Items inside won't be deleted."))) return;
+                    groups = groups.filter(g => g.id !== group.id);
+                    favoriteItems.forEach(item => {
+                        item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
+                    });
+                    favoriteMap.forEach(item => {
+                        item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
+                        if (!item.groupIds.length) favoriteSet.delete(String(item.id || item.name || ""));
+                    });
+                    if (activeFilters.collection === group.id) activeFilters.collection = "all";
+                    persistFilters();
                     await saveFavorites();
                     renderSidebar();
-                    return true;
-                });
-            };
-            const del = createEl("button");
-            del.title = t("Delete Group");
-            del.innerHTML = trashIcon(12);
-            del.style.cssText = miniToolStyle("#fca5a5");
-            del.onclick = async (event) => {
-                event.stopPropagation();
-                if (!confirm(t("Are you sure you want to delete this group? Items inside won't be deleted."))) return;
-                groups = groups.filter(g => g.id !== group.id);
-                favoriteItems.forEach(item => {
-                    item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
-                });
-                favoriteMap.forEach(item => {
-                    item.groupIds = (item.groupIds || []).filter(id => id !== group.id);
-                    if (!item.groupIds.length) favoriteSet.delete(String(item.id || item.name || ""));
-                });
-                if (activeFilters.collection === group.id) activeFilters.collection = "all";
-                persistFilters();
-                await saveFavorites();
-                renderSidebar();
-                triggerFilter();
-            };
-            tools.appendChild(rename);
-            tools.appendChild(del);
-            row.appendChild(tools);
-            sidebar.appendChild(row);
-        });
-
-        const createGroupBtn = createEl("button", "anima-clothing-btn", t("Create Group"));
-        createGroupBtn.style.cssText += "width: 100%; margin: 10px 0 16px;";
-        createGroupBtn.onclick = () => openTextInputModal(t("Create New Group"), t("Enter group name..."), "", async value => {
-            groups.push({ id: `group_${Date.now()}`, name: value, isSystem: false });
-            await saveFavorites();
-            renderSidebar();
-            return true;
-        });
-        sidebar.appendChild(createGroupBtn);
+                    triggerFilter();
+                };
+                tools.appendChild(rename);
+                tools.appendChild(del);
+                row.appendChild(tools);
+                collectionsContent.appendChild(row);
+            });
+        }
+        sidebar.appendChild(collectionsContent);
 
         sidebar.appendChild(sectionTitle(t("Categories")));
         CATEGORY_LIST.forEach(category => {
@@ -1166,6 +1259,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
                 else activeFilters.categories.delete(category);
                 currentPage = 1;
                 persistFilters();
+                updateClearFiltersButtonState();
                 triggerFilter();
             };
             sidebar.appendChild(row);
@@ -1185,6 +1279,7 @@ async function openClothingSelectorModal(node, tagsWidget) {
                 else activeFilters.traits.delete(trait.name);
                 currentPage = 1;
                 persistFilters();
+                updateClearFiltersButtonState();
                 triggerFilter();
             };
             sidebar.appendChild(row);
@@ -1196,17 +1291,47 @@ async function openClothingSelectorModal(node, tagsWidget) {
         }
     }
 
+    function collectionsSectionHeader() {
+        const header = createEl("div", "anima-clothing-section-header foldable");
+        const title = createEl("span", "anima-clothing-section-title", t("Collections"));
+        const spacer = createEl("span", "anima-clothing-section-spacer");
+        const addBtn = createEl("button", "anima-clothing-section-icon-btn");
+        addBtn.type = "button";
+        addBtn.title = t("Create Group");
+        addBtn.innerHTML = "+";
+        const arrow = createEl("span", `anima-clothing-section-arrow${collectionsCollapsed ? " collapsed" : ""}`);
+        arrow.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>`;
+
+        addBtn.onclick = (event) => {
+            event.stopPropagation();
+            openCreateGroupModal();
+        };
+        header.onclick = () => {
+            collectionsCollapsed = !collectionsCollapsed;
+            localStorage.setItem(COLLECTIONS_COLLAPSE_STORAGE_KEY, String(collectionsCollapsed));
+            renderSidebar();
+        };
+
+        header.appendChild(title);
+        header.appendChild(spacer);
+        header.appendChild(addBtn);
+        header.appendChild(arrow);
+        return header;
+    }
+
+    function openCreateGroupModal() {
+        openTextInputModal(t("Create New Group"), t("Enter group name..."), "", async value => {
+            groups.push({ id: `group_${Date.now()}`, name: value, isSystem: false });
+            await saveFavorites();
+            collectionsCollapsed = false;
+            localStorage.setItem(COLLECTIONS_COLLAPSE_STORAGE_KEY, "false");
+            renderSidebar();
+            return true;
+        });
+    }
+
     function sectionTitle(label) {
-        const titleEl = createEl("div", null, label);
-        titleEl.style.cssText = `
-            color: #71717a;
-            font-size: 11px;
-            font-weight: 850;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            margin: 14px 8px 8px;
-        `;
-        return titleEl;
+        return createEl("div", "anima-clothing-section-header", label);
     }
 
     function sidebarItem(label, active, count) {
@@ -1222,6 +1347,31 @@ async function openClothingSelectorModal(node, tagsWidget) {
 
     function switchCollection(collection) {
         activeFilters.collection = collection;
+        currentPage = 1;
+        listContainer.scrollTop = 0;
+        persistFilters();
+        renderSidebar();
+        triggerFilter();
+    }
+
+    function hasActiveSidebarFilters() {
+        return activeFilters.collection !== "all" ||
+            activeFilters.categories.size > 0 ||
+            activeFilters.traits.size > 0;
+    }
+
+    function updateClearFiltersButtonState() {
+        const clearFiltersBtn = sidebar.querySelector(".anima-clothing-clear-filters-btn");
+        if (clearFiltersBtn) {
+            clearFiltersBtn.disabled = !hasActiveSidebarFilters();
+        }
+    }
+
+    function clearSidebarFilters() {
+        if (!hasActiveSidebarFilters()) return;
+        activeFilters.collection = "all";
+        activeFilters.categories.clear();
+        activeFilters.traits.clear();
         currentPage = 1;
         listContainer.scrollTop = 0;
         persistFilters();
