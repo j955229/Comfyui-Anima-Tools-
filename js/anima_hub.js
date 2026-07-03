@@ -21,7 +21,6 @@ const HUB_STATE = {
     activeSection: "artist",
     preferredNode: null,
     viewMode: "all",
-    characterMode: "trigger",
     selected: {
         artist: new Map(),
         character: new Map(),
@@ -223,7 +222,18 @@ function getItemImageUrl(section, item) {
     return item?.preview || item?.imageUrl || item?.thumbnailUrl || "";
 }
 
-async function getPromptForItem(section, item, characterMode = HUB_STATE.characterMode) {
+function getDanbooruUrl(section, item) {
+    if (item?.url) return item.url;
+    if (section === "artist" && item?.name) {
+        return `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(item.name)}`;
+    }
+    if (section === "character" && item?.name) {
+        return `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(item.name)}`;
+    }
+    return "";
+}
+
+async function getPromptForItem(section, item, characterMode = item?._hubCharacterMode || "trigger") {
     if (section === "artist") return `@${item?.name || ""}`;
     if (section === "character") {
         if (item?.isCustom) return item.customContent || item.name || "";
@@ -326,6 +336,70 @@ async function copyText(text) {
     } catch {
         fallbackCopy(value);
     }
+    showToast("Copied");
+}
+
+function showToast(message) {
+    const existing = document.getElementById("anima-hub-toast");
+    if (existing) existing.remove();
+
+    const toast = createEl("div", "anima-hub-toast", message);
+    toast.id = "anima-hub-toast";
+    document.body.appendChild(toast);
+    setTimeout(() => toast.classList.add("visible"), 10);
+    setTimeout(() => {
+        toast.classList.remove("visible");
+        setTimeout(() => toast.remove(), 180);
+    }, 1300);
+}
+
+function openImagePreview(imageUrl, title = "") {
+    if (!imageUrl) return;
+
+    const overlay = createEl("div", "anima-hub-preview-overlay");
+    const panel = createEl("div", "anima-hub-preview-panel");
+    const close = createEl("button", "anima-hub-preview-close", "Close");
+    close.type = "button";
+    close.onclick = () => overlay.remove();
+
+    const img = document.createElement("img");
+    img.src = imageUrl;
+    img.alt = title;
+
+    panel.appendChild(close);
+    panel.appendChild(img);
+    overlay.appendChild(panel);
+    overlay.addEventListener("mousedown", event => {
+        if (event.target === overlay) overlay.remove();
+    });
+    document.body.appendChild(overlay);
+}
+
+async function getDisplayTags(section, item) {
+    if (section === "artist") return splitPromptTokens(item?.name);
+    if (section === "character") {
+        const officialData = await getOfficialCharacterData(item);
+        const tags = [];
+        const seen = new Set();
+        pushUniquePromptTokens(tags, seen, officialData?.tags);
+        pushUniquePromptTokens(tags, seen, officialData?.core_tags);
+        pushUniquePromptTokens(tags, seen, officialData?.coreTags);
+        if (!tags.length) {
+            pushUniquePromptTokens(tags, seen, item?.gender);
+            if (item?.hair) pushUniquePromptTokens(tags, seen, `${item.hair} hair`);
+            if (item?.eye) pushUniquePromptTokens(tags, seen, `${item.eye} eyes`);
+        }
+        return tags;
+    }
+    return splitPromptTokens(item?.tags);
+}
+
+function getSelectedItem(section, item, characterMode = "trigger") {
+    if (section !== "character") return item;
+    return {
+        ...item,
+        _hubCharacterMode: characterMode,
+    };
 }
 
 function installHubStyles() {
@@ -411,8 +485,7 @@ function installHubStyles() {
             color: #ffffff;
         }
         .anima-hub-search,
-        .anima-hub-target,
-        .anima-hub-character-mode {
+        .anima-hub-target {
             height: 36px;
             border-radius: 7px;
             border: 1px solid rgba(255,255,255,0.12);
@@ -429,9 +502,6 @@ function installHubStyles() {
         .anima-hub-target {
             width: min(410px, 38vw);
         }
-        .anima-hub-character-mode {
-            width: 155px;
-        }
         .anima-hub-view {
             display: flex;
             gap: 8px;
@@ -445,6 +515,7 @@ function installHubStyles() {
             align-content: start;
         }
         .anima-hub-card {
+            position: relative;
             min-height: 280px;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.09);
@@ -460,6 +531,7 @@ function installHubStyles() {
             background: rgba(56,189,248,0.13);
         }
         .anima-hub-thumb {
+            position: relative;
             width: 100%;
             aspect-ratio: 3 / 4;
             border-radius: 7px;
@@ -475,8 +547,106 @@ function installHubStyles() {
         .anima-hub-thumb img {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
             display: block;
+            background: #202329;
+        }
+        .anima-hub-overlay-panel {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.16s ease;
+            background: linear-gradient(to top, rgba(7,7,12,0.9) 28%, rgba(7,7,12,0.62) 68%, rgba(7,7,12,0.2));
+        }
+        .anima-hub-thumb:hover .anima-hub-overlay-panel,
+        .anima-hub-overlay-panel:focus-within {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .anima-hub-overlay-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 12px 11px 5px;
+        }
+        .anima-hub-overlay-label {
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 1.4px;
+            text-transform: uppercase;
+            color: #ffffff;
+            margin-bottom: 5px;
+        }
+        .anima-hub-overlay-trigger {
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1.35;
+            color: #f4f4f5;
+            background: rgba(0,0,0,0.48);
+            border: 1px solid rgba(255,255,255,0.14);
+            border-radius: 8px;
+            padding: 6px 8px;
+            margin-bottom: 10px;
+            user-select: all;
+            overflow-wrap: anywhere;
+        }
+        .anima-hub-tag-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+        .anima-hub-tag-chip {
+            font-size: 10px;
+            color: #f4f4f5;
+            background: rgba(255,255,255,0.09);
+            border: 1px solid rgba(255,255,255,0.16);
+            border-radius: 6px;
+            padding: 2px 6px;
+            line-height: 1.35;
+            max-width: 100%;
+            overflow-wrap: anywhere;
+        }
+        .anima-hub-overlay-actions {
+            flex: 0 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 8px;
+        }
+        .anima-hub-overlay-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+        }
+        .anima-hub-overlay-action {
+            height: 34px;
+            padding: 0 7px;
+            border-radius: 9px;
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            color: #f4f4f5;
+            font-size: 11px;
+            font-weight: 800;
+            cursor: pointer;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .anima-hub-overlay-action:hover,
+        .anima-hub-overlay-action.primary {
+            background: #0ea5e9;
+            border-color: #38bdf8;
+            color: #ffffff;
+        }
+        .anima-hub-overlay-action:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+            background: rgba(255,255,255,0.05);
+            border-color: rgba(255,255,255,0.12);
+            color: #a1a1aa;
         }
         .anima-hub-card-title {
             font-size: 13px;
@@ -494,7 +664,7 @@ function installHubStyles() {
         }
         .anima-hub-card-actions {
             display: grid;
-            grid-template-columns: 1fr 1fr 38px;
+            grid-template-columns: 1fr;
             gap: 7px;
             margin-top: auto;
         }
@@ -511,13 +681,76 @@ function installHubStyles() {
             color: #a1a1aa;
             padding: 24px 0;
         }
+        .anima-hub-toast {
+            position: fixed;
+            left: 50%;
+            bottom: 28px;
+            z-index: 100002;
+            transform: translate(-50%, 12px);
+            opacity: 0;
+            background: #0ea5e9;
+            color: #ffffff;
+            border: 1px solid rgba(255,255,255,0.18);
+            border-radius: 999px;
+            padding: 9px 16px;
+            font-size: 13px;
+            font-weight: 800;
+            box-shadow: 0 14px 36px rgba(0,0,0,0.4);
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+        .anima-hub-toast.visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+        .anima-hub-preview-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+            background: rgba(0,0,0,0.58);
+        }
+        .anima-hub-preview-panel {
+            position: relative;
+            width: min(540px, 72vw);
+            max-height: 86vh;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background: #15171b;
+            padding: 12px;
+            box-shadow: 0 24px 80px rgba(0,0,0,0.58);
+        }
+        .anima-hub-preview-panel img {
+            width: 100%;
+            max-height: calc(86vh - 24px);
+            object-fit: contain;
+            display: block;
+            border-radius: 7px;
+            background: #202329;
+        }
+        .anima-hub-preview-close {
+            position: absolute;
+            right: 10px;
+            top: 10px;
+            z-index: 1;
+            height: 30px;
+            padding: 0 10px;
+            border-radius: 7px;
+            border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(0,0,0,0.58);
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 800;
+        }
         @media (max-width: 760px) {
             .anima-hub-toolbar,
             .anima-hub-footer {
                 flex-wrap: wrap;
             }
-            .anima-hub-target,
-            .anima-hub-character-mode {
+            .anima-hub-target {
                 width: 100%;
             }
         }
@@ -531,13 +764,107 @@ function renderViewButtons(root) {
     });
 }
 
+function createOverlayButton(label, onClick, primary = false) {
+    const button = createEl("button", primary ? "anima-hub-overlay-action primary" : "anima-hub-overlay-action", label);
+    button.type = "button";
+    button.onclick = onClick;
+    return button;
+}
+
+function fillOverlayTags(tagContainer, tags) {
+    tagContainer.innerHTML = "";
+    const limited = tags.slice(0, 18);
+    if (!limited.length) {
+        tagContainer.appendChild(createEl("span", "anima-hub-tag-chip", "No tags"));
+        return;
+    }
+    limited.forEach(tag => {
+        tagContainer.appendChild(createEl("span", "anima-hub-tag-chip", tag));
+    });
+}
+
+function createCardOverlay(root, section, item, imageUrl) {
+    const key = getItemKey(section, item);
+    const selected = HUB_STATE.selected[section].get(key);
+    const selectedMode = selected?._hubCharacterMode || "";
+    const danbooruUrl = getDanbooruUrl(section, item);
+
+    const overlay = createEl("div", "anima-hub-overlay-panel");
+    const scroll = createEl("div", "anima-hub-overlay-scroll");
+    scroll.appendChild(createEl("div", "anima-hub-overlay-label", "Trigger"));
+    const trigger = createEl("div", "anima-hub-overlay-trigger", section === "artist" ? `@${item?.name || ""}` : getItemTitle(section, item));
+    getPromptForItem(section, item, "trigger").then(prompt => {
+        if (prompt) trigger.textContent = prompt;
+    });
+    scroll.appendChild(trigger);
+    scroll.appendChild(createEl("div", "anima-hub-overlay-label", "Tags"));
+    const tagList = createEl("div", "anima-hub-tag-list");
+    fillOverlayTags(tagList, splitPromptTokens(item?.tags || item?.name || ""));
+    getDisplayTags(section, item).then(tags => fillOverlayTags(tagList, tags));
+    scroll.appendChild(tagList);
+
+    const actions = createEl("div", "anima-hub-overlay-actions");
+    const topRow = createEl("div", "anima-hub-overlay-row");
+    const fullImageButton = createOverlayButton("Full Image", () => openImagePreview(imageUrl, getItemTitle(section, item)));
+    fullImageButton.disabled = !imageUrl;
+    topRow.appendChild(fullImageButton);
+    const sourceButton = createOverlayButton("Danbooru", () => {
+        if (danbooruUrl) window.open(danbooruUrl, "_blank", "noopener,noreferrer");
+    });
+    sourceButton.disabled = !danbooruUrl;
+    topRow.appendChild(sourceButton);
+    actions.appendChild(topRow);
+
+    if (section === "character") {
+        const selectRow = createEl("div", "anima-hub-overlay-row");
+        selectRow.appendChild(createOverlayButton("Select Trigger", () => {
+            HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger"));
+            renderHub(root);
+        }, selectedMode === "trigger"));
+        selectRow.appendChild(createOverlayButton("Select + Tags", () => {
+            HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger_tags"));
+            renderHub(root);
+        }, selectedMode === "trigger_tags"));
+        actions.appendChild(selectRow);
+
+        const copyRow = createEl("div", "anima-hub-overlay-row");
+        copyRow.appendChild(createOverlayButton("Copy Trigger", async () => {
+            const prompt = await getPromptForItem(section, item, "trigger");
+            await copyText(prompt ? `${prompt}, ` : "");
+        }));
+        copyRow.appendChild(createOverlayButton("Copy + Tags", async () => {
+            const prompt = await getPromptForItem(section, item, "trigger_tags");
+            await copyText(prompt ? `${prompt}, ` : "");
+        }));
+        actions.appendChild(copyRow);
+    } else {
+        const actionRow = createEl("div", "anima-hub-overlay-row");
+        actionRow.appendChild(createOverlayButton(HUB_STATE.selected[section].has(key) ? "Selected" : "Select", () => {
+            if (HUB_STATE.selected[section].has(key)) {
+                HUB_STATE.selected[section].delete(key);
+            } else {
+                HUB_STATE.selected[section].set(key, getSelectedItem(section, item));
+            }
+            renderHub(root);
+        }, HUB_STATE.selected[section].has(key)));
+        actionRow.appendChild(createOverlayButton("Copy", async () => {
+            const prompt = await getPromptForItem(section, item);
+            await copyText(prompt ? `${prompt}, ` : "");
+        }));
+        actions.appendChild(actionRow);
+    }
+
+    overlay.appendChild(scroll);
+    overlay.appendChild(actions);
+    return overlay;
+}
+
 function renderHub(root) {
     const section = HUB_STATE.activeSection;
     const sectionDef = SECTIONS.find(item => item.id === section) || SECTIONS[0];
     const query = root.querySelector(".anima-hub-search")?.value?.trim?.().toLowerCase() || "";
     const targets = resolveAnimaTargets(section, HUB_STATE.preferredNode);
     const targetSelect = root.querySelector(".anima-hub-target");
-    const characterMode = root.querySelector(".anima-hub-character-mode");
 
     if (targetSelect) {
         const currentId = HUB_STATE.targetIds[section];
@@ -557,11 +884,6 @@ function renderHub(root) {
             targetSelect.value = targets.some(target => target.id === currentId) ? currentId : targets[0].id;
             HUB_STATE.targetIds[section] = targetSelect.value;
         }
-    }
-
-    if (characterMode) {
-        characterMode.style.display = section === "character" ? "" : "none";
-        characterMode.value = HUB_STATE.characterMode;
     }
 
     root.querySelectorAll(".anima-hub-tab").forEach(tab => {
@@ -595,36 +917,20 @@ function renderHub(root) {
                 img.loading = "lazy";
                 img.src = imageUrl;
                 img.alt = getItemTitle(section, item);
+                img.onclick = () => openImagePreview(imageUrl, getItemTitle(section, item));
                 img.onerror = () => {
                     img.remove();
                     thumb.textContent = "No image";
                 };
                 thumb.appendChild(img);
             }
+            thumb.appendChild(createCardOverlay(root, section, item, imageUrl));
 
             const title = createEl("div", "anima-hub-card-title", getItemTitle(section, item));
             const meta = createEl("div", "anima-hub-card-meta", getItemMeta(section, item) || item?.tags || "");
 
             const actions = createEl("div", "anima-hub-card-actions");
-            const select = createEl("button", selectedMap.has(key) ? "anima-hub-card-action primary" : "anima-hub-card-action", selectedMap.has(key) ? "Selected" : "Select");
-            select.type = "button";
-            select.onclick = () => {
-                if (selectedMap.has(key)) {
-                    selectedMap.delete(key);
-                } else {
-                    selectedMap.set(key, item);
-                }
-                renderHub(root);
-            };
-
-            const copy = createEl("button", "anima-hub-card-action", "Copy");
-            copy.type = "button";
-            copy.onclick = async () => {
-                const prompt = await getPromptForItem(section, item);
-                await copyText(prompt ? `${prompt}, ` : "");
-            };
-
-            const favorite = createEl("button", favoriteMap.has(key) ? "anima-hub-card-action primary" : "anima-hub-card-action", favoriteMap.has(key) ? "*" : "+");
+            const favorite = createEl("button", favoriteMap.has(key) ? "anima-hub-card-action primary" : "anima-hub-card-action", favoriteMap.has(key) ? "Saved" : "Favorite");
             favorite.type = "button";
             favorite.title = favoriteMap.has(key) ? "Remove favorite" : "Add favorite";
             favorite.onclick = async () => {
@@ -633,8 +939,6 @@ function renderHub(root) {
                 renderHub(root);
             };
 
-            actions.appendChild(select);
-            actions.appendChild(copy);
             actions.appendChild(favorite);
             card.appendChild(thumb);
             card.appendChild(title);
@@ -734,23 +1038,12 @@ function createHub(section, preferredNode) {
     view.appendChild(allView);
     view.appendChild(favoritesView);
 
-    const characterMode = createEl("select", "anima-hub-character-mode");
-    characterMode.innerHTML = `
-        <option value="trigger">Trigger</option>
-        <option value="trigger_tags">Trigger + Tags</option>
-    `;
-    characterMode.onchange = () => {
-        HUB_STATE.characterMode = characterMode.value;
-        renderHub(root);
-    };
-
     const target = createEl("select", "anima-hub-target");
     target.onchange = () => {
         HUB_STATE.targetIds[HUB_STATE.activeSection] = target.value;
     };
     toolbar.appendChild(view);
     toolbar.appendChild(search);
-    toolbar.appendChild(characterMode);
     toolbar.appendChild(target);
 
     const grid = createEl("div", "anima-hub-grid");
