@@ -510,13 +510,13 @@ function installHubStyles() {
             padding: 16px 18px;
             overflow: auto;
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
             align-content: start;
         }
         .anima-hub-card {
             position: relative;
-            min-height: 280px;
+            min-height: 400px;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.09);
             background: rgba(255,255,255,0.045);
@@ -570,7 +570,7 @@ function installHubStyles() {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
-            padding: 12px 11px 5px;
+            padding: 14px 13px 6px;
         }
         .anima-hub-overlay-label {
             font-size: 9px;
@@ -618,12 +618,13 @@ function installHubStyles() {
         }
         .anima-hub-overlay-row {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px;
         }
         .anima-hub-overlay-action {
-            height: 34px;
-            padding: 0 7px;
+            min-height: 36px;
+            height: auto;
+            padding: 7px 8px;
             border-radius: 9px;
             border: 1px solid rgba(255,255,255,0.18);
             background: rgba(255,255,255,0.08);
@@ -631,9 +632,9 @@ function installHubStyles() {
             font-size: 11px;
             font-weight: 800;
             cursor: pointer;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            line-height: 1.2;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
         .anima-hub-overlay-action:hover,
         .anima-hub-overlay-action.primary {
@@ -649,11 +650,11 @@ function installHubStyles() {
             color: #a1a1aa;
         }
         .anima-hub-card-title {
-            font-size: 13px;
+            font-size: 15px;
             font-weight: 800;
             line-height: 1.35;
             overflow-wrap: anywhere;
-            min-height: 18px;
+            min-height: 20px;
         }
         .anima-hub-card-meta,
         .anima-hub-count {
@@ -669,12 +670,13 @@ function installHubStyles() {
             margin-top: auto;
         }
         .anima-hub-card-action {
-            height: 30px;
-            padding: 0 8px;
+            min-height: 32px;
+            height: auto;
+            padding: 7px 8px;
             font-size: 12px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            line-height: 1.2;
+            white-space: normal;
+            overflow-wrap: anywhere;
         }
         .anima-hub-empty {
             grid-column: 1 / -1;
@@ -817,22 +819,22 @@ function createCardOverlay(root, section, item, imageUrl) {
 
     if (section === "character") {
         const selectRow = createEl("div", "anima-hub-overlay-row");
-        selectRow.appendChild(createOverlayButton("Select Trigger", () => {
+        selectRow.appendChild(createOverlayButton("Trigger", () => {
             HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger"));
             renderHub(root);
         }, selectedMode === "trigger"));
-        selectRow.appendChild(createOverlayButton("Select + Tags", () => {
+        selectRow.appendChild(createOverlayButton("Trigger + tags", () => {
             HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger_tags"));
             renderHub(root);
         }, selectedMode === "trigger_tags"));
         actions.appendChild(selectRow);
 
         const copyRow = createEl("div", "anima-hub-overlay-row");
-        copyRow.appendChild(createOverlayButton("Copy Trigger", async () => {
+        copyRow.appendChild(createOverlayButton("Copy trigger", async () => {
             const prompt = await getPromptForItem(section, item, "trigger");
             await copyText(prompt ? `${prompt}, ` : "");
         }));
-        copyRow.appendChild(createOverlayButton("Copy + Tags", async () => {
+        copyRow.appendChild(createOverlayButton("Copy + tags", async () => {
             const prompt = await getPromptForItem(section, item, "trigger_tags");
             await copyText(prompt ? `${prompt}, ` : "");
         }));
