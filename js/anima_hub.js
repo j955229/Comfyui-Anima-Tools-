@@ -1,7 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { applyTagsToTarget } from "./anima_apply_tags.js";
 import { ANIMA_SECTION_WIDGETS, getTargetById, resolveAnimaTargets } from "./anima_target_resolver.js";
-import "./data.js";
+import { ARTIST_SOURCES, getActiveArtistSource, getArtistDataForSource, getArtistSourceStatus, setActiveArtistSource } from "./anima_artist_sources.js";
 import "./character_data.js";
 import "./clothing_data.js";
 import "./background_data.js";
@@ -21,6 +21,11 @@ const HUB_STATE = {
     activeSection: "artist",
     preferredNode: null,
     viewMode: "all",
+    artistSource: getActiveArtistSource(),
+    artistData: [],
+    artistDataLoadedSource: "",
+    artistDataLoading: false,
+    artistDataRequestId: 0,
     selected: {
         artist: new Map(),
         character: new Map(),
@@ -166,7 +171,7 @@ function pushUniquePromptTokens(target, seen, value) {
 }
 
 function getSectionData(section) {
-    if (section === "artist") return window.galleryData || [];
+    if (section === "artist") return HUB_STATE.artistDataLoadedSource === HUB_STATE.artistSource ? HUB_STATE.artistData : [];
     if (section === "character") return window.characterData || [];
     if (section === "clothing") return window.clothingData || [];
     if (section === "background") return window.backgroundData || [];
@@ -176,18 +181,18 @@ function getSectionData(section) {
 
 function getItemKey(section, item) {
     if (item?.hubKey) return String(item.hubKey);
-    if (section === "artist") return String(item?.name || "");
+    if (section === "artist") return `${item?.source || "theta"}:${item?.sourceKey || item?.name || item?.prompt || ""}`;
     return String(item?.id || item?.name || item?.tags || "");
 }
 
 function getItemTitle(section, item) {
-    if (section === "artist") return `@${item?.name || ""}`;
+    if (section === "artist") return item?.prompt || `@${item?.name || ""}`;
     if (section === "character") return titleCase(item?.name || "");
     return item?.name || item?.name_zh || item?.tags || "";
 }
 
 function getItemMeta(section, item) {
-    if (section === "artist") return `${item?.post_count ?? 0} works`;
+    if (section === "artist") return [item?.sourceLabel, `${item?.post_count ?? item?.postCount ?? 0} works`].filter(Boolean).join(" / ");
     if (section === "character") return [item?.copyright, item?.post_count ? `${item.post_count} works` : ""].filter(Boolean).join(" / ");
     return [item?.categories?.[0], item?.traits?.slice?.(0, 3)?.join(", ")].filter(Boolean).join(" / ");
 }
@@ -201,6 +206,10 @@ function getSearchText(section, item) {
         item?.copyright,
         item?.tags,
         item?.tags_zh,
+        item?.prompt,
+        item?.source,
+        item?.sourceLabel,
+        ...(Array.isArray(item?.aliases) ? item.aliases : []),
     ].join(" ").toLowerCase();
 }
 
@@ -224,8 +233,9 @@ function getItemImageUrl(section, item) {
 
 function getDanbooruUrl(section, item) {
     if (item?.url) return item.url;
-    if (section === "artist" && item?.name) {
-        return `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(item.name)}`;
+    if (section === "artist" && (item?.prompt || item?.name)) {
+        const tag = String(item?.prompt || item?.name || "").replace(/^@/, "");
+        return `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(tag)}`;
     }
     if (section === "character" && item?.name) {
         return `https://danbooru.donmai.us/posts?tags=${encodeURIComponent(item.name)}`;
@@ -234,7 +244,7 @@ function getDanbooruUrl(section, item) {
 }
 
 async function getPromptForItem(section, item, characterMode = item?._hubCharacterMode || "trigger") {
-    if (section === "artist") return `@${item?.name || ""}`;
+    if (section === "artist") return item?.prompt || `@${item?.name || ""}`;
     if (section === "character") {
         if (item?.isCustom) return item.customContent || item.name || "";
         const officialData = await getOfficialCharacterData(item);
@@ -402,6 +412,31 @@ function getSelectedItem(section, item, characterMode = "trigger") {
     };
 }
 
+async function refreshArtistData(root) {
+    const source = HUB_STATE.artistSource;
+    const requestId = ++HUB_STATE.artistDataRequestId;
+    HUB_STATE.artistDataLoading = true;
+
+    const data = await getArtistDataForSource(source);
+    if (requestId !== HUB_STATE.artistDataRequestId || source !== HUB_STATE.artistSource) {
+        return;
+    }
+
+    HUB_STATE.artistData = data;
+    HUB_STATE.artistDataLoadedSource = source;
+    HUB_STATE.artistDataLoading = false;
+    if (root && activeHub?.contains(root)) {
+        renderHub(root);
+    }
+}
+
+function ensureArtistData(root) {
+    if (HUB_STATE.activeSection !== "artist") return;
+    if (HUB_STATE.artistDataLoadedSource === HUB_STATE.artistSource) return;
+    if (HUB_STATE.artistDataLoading) return;
+    refreshArtistData(root);
+}
+
 function installHubStyles() {
     if (document.getElementById("anima-hub-styles")) return;
     const style = document.createElement("style");
@@ -485,7 +520,8 @@ function installHubStyles() {
             color: #ffffff;
         }
         .anima-hub-search,
-        .anima-hub-target {
+        .anima-hub-target,
+        .anima-hub-artist-source {
             height: 36px;
             border-radius: 7px;
             border: 1px solid rgba(255,255,255,0.12);
@@ -501,6 +537,14 @@ function installHubStyles() {
         }
         .anima-hub-target {
             width: min(410px, 38vw);
+        }
+        .anima-hub-artist-source {
+            width: 132px;
+        }
+        .anima-hub-source-status {
+            font-size: 12px;
+            color: #a1a1aa;
+            white-space: nowrap;
         }
         .anima-hub-view {
             display: flex;
@@ -752,7 +796,11 @@ function installHubStyles() {
             .anima-hub-footer {
                 flex-wrap: wrap;
             }
-            .anima-hub-target {
+            .anima-hub-target,
+            .anima-hub-artist-source {
+                width: 100%;
+            }
+            .anima-hub-source-status {
                 width: 100%;
             }
         }
@@ -867,6 +915,10 @@ function renderHub(root) {
     const query = root.querySelector(".anima-hub-search")?.value?.trim?.().toLowerCase() || "";
     const targets = resolveAnimaTargets(section, HUB_STATE.preferredNode);
     const targetSelect = root.querySelector(".anima-hub-target");
+    const sourceSelect = root.querySelector(".anima-hub-artist-source");
+    const sourceStatus = root.querySelector(".anima-hub-source-status");
+
+    ensureArtistData(root);
 
     if (targetSelect) {
         const currentId = HUB_STATE.targetIds[section];
@@ -892,6 +944,15 @@ function renderHub(root) {
         tab.classList.toggle("active", tab.dataset.section === section);
     });
     renderViewButtons(root);
+
+    if (sourceSelect) {
+        sourceSelect.style.display = section === "artist" ? "" : "none";
+        sourceSelect.value = HUB_STATE.artistSource;
+    }
+    if (sourceStatus) {
+        sourceStatus.style.display = section === "artist" ? "" : "none";
+        sourceStatus.textContent = HUB_STATE.artistDataLoading ? "Loading artists..." : getArtistSourceStatus(HUB_STATE.artistSource);
+    }
 
     const allData = getVisibleData(section);
     const selectedMap = HUB_STATE.selected[section];
@@ -1022,6 +1083,24 @@ function createHub(section, preferredNode) {
     search.placeholder = "Search";
     search.oninput = () => renderHub(root);
 
+    const sourceSelect = createEl("select", "anima-hub-artist-source");
+    ARTIST_SOURCES.forEach(source => {
+        const option = document.createElement("option");
+        option.value = source.id;
+        option.textContent = source.label;
+        sourceSelect.appendChild(option);
+    });
+    sourceSelect.value = HUB_STATE.artistSource;
+    sourceSelect.onchange = () => {
+        HUB_STATE.artistSource = sourceSelect.value;
+        setActiveArtistSource(HUB_STATE.artistSource);
+        HUB_STATE.artistDataLoadedSource = "";
+        HUB_STATE.artistData = [];
+        renderHub(root);
+    };
+
+    const sourceStatus = createEl("div", "anima-hub-source-status", "");
+
     const view = createEl("div", "anima-hub-view");
     const allView = createEl("button", "anima-hub-pill", "All");
     allView.type = "button";
@@ -1045,6 +1124,8 @@ function createHub(section, preferredNode) {
         HUB_STATE.targetIds[HUB_STATE.activeSection] = target.value;
     };
     toolbar.appendChild(view);
+    toolbar.appendChild(sourceSelect);
+    toolbar.appendChild(sourceStatus);
     toolbar.appendChild(search);
     toolbar.appendChild(target);
 
