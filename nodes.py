@@ -1190,6 +1190,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 try:
     from PIL import Image
@@ -1602,6 +1603,9 @@ ANIMADEX_CHARACTER_SEARCH_API = "https://animadex.net/api/characters/search"
 _animadex_character_cache = {}
 _animadex_character_cache_lock = threading.Lock()
 _animadex_character_cache_ttl = 60 * 60 * 12
+_animadex_all_character_cache = {}
+_animadex_all_character_cache_lock = threading.Lock()
+_animadex_all_character_cache_ttl = 60 * 60 * 12
 
 def _normalize_animadex_text(value: str) -> str:
     return " ".join(str(value or "").strip().lower().replace("_", " ").split())
@@ -1668,6 +1672,60 @@ def _fetch_animadex_character(name: str, copyright: str) -> dict | None:
         data = json.loads(resp.read().decode(charset, errors="replace"))
     return _compact_animadex_character_item(_select_animadex_character_result(data.get("results") or [], name, copyright))
 
+def _fetch_animadex_character_page(page: int) -> dict:
+    params = urllib.parse.urlencode({
+        "sort": "count",
+        "page": str(page),
+    })
+    url = f"{ANIMADEX_CHARACTER_SEARCH_API}?{params}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "ComfyUI-Anima-Tools/1.0 (+https://github.com/j955229/Comfyui-Anima-Tools-)",
+            "Accept": "application/json",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        charset = resp.headers.get_content_charset() or "utf-8"
+        return json.loads(resp.read().decode(charset, errors="replace"))
+
+def _load_animadex_all_characters() -> dict:
+    cache_key = "all"
+    now = time.time()
+    with _animadex_all_character_cache_lock:
+        cached = _animadex_all_character_cache.get(cache_key)
+        if cached and now - cached.get("time", 0) < _animadex_all_character_cache_ttl:
+            return cached["payload"]
+
+    first = _fetch_animadex_character_page(1)
+    pages = int(first.get("pages") or 1)
+    total = int(first.get("total") or 0)
+    page_size = int(first.get("page_size") or 0)
+    rows_by_page = {1: first.get("results") if isinstance(first.get("results"), list) else []}
+
+    if pages > 1:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            futures = {executor.submit(_fetch_animadex_character_page, page): page for page in range(2, pages + 1)}
+            for future in as_completed(futures):
+                page = futures[future]
+                data = future.result()
+                rows_by_page[page] = data.get("results") if isinstance(data.get("results"), list) else []
+
+    rows = []
+    for page in range(1, pages + 1):
+        rows.extend(rows_by_page.get(page, []))
+
+    payload = {
+        "success": True,
+        "total": total or len(rows),
+        "page_size": page_size,
+        "pages": pages,
+        "results": rows,
+    }
+    with _animadex_all_character_cache_lock:
+        _animadex_all_character_cache[cache_key] = {"time": now, "payload": payload}
+    return payload
+
 @PromptServer.instance.routes.get("/anima-tools/character/official")
 async def get_official_character_api(request):
     name = str(request.query.get("name", "")).strip()
@@ -1692,6 +1750,14 @@ async def get_official_character_api(request):
         return web.json_response(payload)
     except Exception as e:
         print(f"[Anima Tools] Error fetching AnimaDex official character tags: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=502)
+
+@PromptServer.instance.routes.get("/anima-tools/character/animadex/all")
+async def get_animadex_all_characters_api(request):
+    try:
+        return web.json_response(_load_animadex_all_characters())
+    except Exception as e:
+        print(f"[Anima Tools] Error fetching AnimaDex full character list: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=502)
 
 
@@ -2720,4 +2786,3 @@ async def lora_delete_local_api(request):
     except Exception as e:
         print(f"[Anima Tools] Delete Local API error: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
-

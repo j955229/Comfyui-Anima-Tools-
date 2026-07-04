@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { applyTagsToTarget } from "./anima_apply_tags.js";
 import { ANIMA_SECTION_WIDGETS, getTargetById, resolveAnimaTargets } from "./anima_target_resolver.js";
 import { ARTIST_SOURCES, getActiveArtistSource, getArtistDataForSource, getArtistSourceStatus, setActiveArtistSource } from "./anima_artist_sources.js";
+import { CHARACTER_SOURCES, getActiveCharacterSource, getCharacterDataForSource, getCharacterSourceStatus, setActiveCharacterSource } from "./anima_character_sources.js";
 import { getTaxonomyCategories, getTaxonomyCounts, getTaxonomyGroups, itemMatchesTaxonomy } from "./anima_taxonomy.js";
 import "./character_data.js";
 import "./clothing_data.js";
@@ -9,11 +10,11 @@ import "./background_data.js";
 import "./pose_data.js";
 
 const SECTIONS = [
-    { id: "artist", label: "Artist", widget: "artist_tags", accent: "#38bdf8" },
-    { id: "character", label: "Character", widget: "character_tags", accent: "#f472b6" },
-    { id: "clothing", label: "Clothing", widget: "clothing_tags", accent: "#a78bfa" },
-    { id: "background", label: "Background", widget: "background_tags", accent: "#34d399" },
-    { id: "pose", label: "Pose", widget: "pose_tags", accent: "#f59e0b" },
+    { id: "artist", label: "画师", widget: "artist_tags", accent: "#38bdf8" },
+    { id: "character", label: "人物", widget: "character_tags", accent: "#f472b6" },
+    { id: "clothing", label: "服装", widget: "clothing_tags", accent: "#a78bfa" },
+    { id: "background", label: "背景", widget: "background_tags", accent: "#34d399" },
+    { id: "pose", label: "姿势", widget: "pose_tags", accent: "#f59e0b" },
 ];
 
 const FAVORITES_STORAGE_KEY = "anima-hub-favorites-fallback";
@@ -27,6 +28,11 @@ const HUB_STATE = {
     artistDataLoadedSource: "",
     artistDataLoading: false,
     artistDataRequestId: 0,
+    characterSource: getActiveCharacterSource(),
+    characterData: [],
+    characterDataLoadedSource: "",
+    characterDataLoading: false,
+    characterDataRequestId: 0,
     selected: {
         artist: new Map(),
         character: new Map(),
@@ -35,6 +41,7 @@ const HUB_STATE = {
         pose: new Map(),
     },
     taxonomy: {
+        character: "all",
         clothing: "all",
         background: "all",
         pose: "all",
@@ -178,7 +185,7 @@ function pushUniquePromptTokens(target, seen, value) {
 
 function getSectionData(section) {
     if (section === "artist") return HUB_STATE.artistDataLoadedSource === HUB_STATE.artistSource ? HUB_STATE.artistData : [];
-    if (section === "character") return window.characterData || [];
+    if (section === "character") return HUB_STATE.characterDataLoadedSource === HUB_STATE.characterSource ? HUB_STATE.characterData : [];
     if (section === "clothing") return window.clothingData || [];
     if (section === "background") return window.backgroundData || [];
     if (section === "pose") return window.poseData || [];
@@ -254,12 +261,13 @@ async function getPromptForItem(section, item, characterMode = item?._hubCharact
     if (section === "character") {
         if (item?.isCustom) return item.customContent || item.name || "";
         const officialData = await getOfficialCharacterData(item);
-        const trigger = officialData?.trigger || [item?.name, item?.copyright].filter(Boolean).join(", ");
+        const trigger = item?.trigger || officialData?.trigger || [item?.name, item?.copyright].filter(Boolean).join(", ");
         if (characterMode !== "trigger_tags") return trigger;
 
         const result = [];
         const seen = new Set();
         pushUniquePromptTokens(result, seen, trigger);
+        pushUniquePromptTokens(result, seen, item?.tags);
         pushUniquePromptTokens(result, seen, officialData?.tags);
         pushUniquePromptTokens(result, seen, officialData?.core_tags);
         pushUniquePromptTokens(result, seen, officialData?.coreTags);
@@ -405,6 +413,7 @@ async function getDisplayTags(section, item) {
         const officialData = await getOfficialCharacterData(item);
         const tags = [];
         const seen = new Set();
+        pushUniquePromptTokens(tags, seen, item?.tags);
         pushUniquePromptTokens(tags, seen, officialData?.tags);
         pushUniquePromptTokens(tags, seen, officialData?.core_tags);
         pushUniquePromptTokens(tags, seen, officialData?.coreTags);
@@ -444,11 +453,36 @@ async function refreshArtistData(root) {
     }
 }
 
+async function refreshCharacterData(root) {
+    const source = HUB_STATE.characterSource;
+    const requestId = ++HUB_STATE.characterDataRequestId;
+    HUB_STATE.characterDataLoading = true;
+
+    const data = await getCharacterDataForSource(source);
+    if (requestId !== HUB_STATE.characterDataRequestId || source !== HUB_STATE.characterSource) {
+        return;
+    }
+
+    HUB_STATE.characterData = data;
+    HUB_STATE.characterDataLoadedSource = source;
+    HUB_STATE.characterDataLoading = false;
+    if (root && activeHub?.contains(root)) {
+        renderHub(root);
+    }
+}
+
 function ensureArtistData(root) {
     if (HUB_STATE.activeSection !== "artist") return;
     if (HUB_STATE.artistDataLoadedSource === HUB_STATE.artistSource) return;
     if (HUB_STATE.artistDataLoading) return;
     refreshArtistData(root);
+}
+
+function ensureCharacterData(root) {
+    if (HUB_STATE.activeSection !== "character") return;
+    if (HUB_STATE.characterDataLoadedSource === HUB_STATE.characterSource) return;
+    if (HUB_STATE.characterDataLoading) return;
+    refreshCharacterData(root);
 }
 
 function installHubStyles() {
@@ -668,7 +702,7 @@ function installHubStyles() {
         }
         .anima-hub-card {
             position: relative;
-            min-height: 0;
+            min-height: 360px;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.09);
             background: rgba(255,255,255,0.035);
@@ -687,6 +721,8 @@ function installHubStyles() {
             position: relative;
             width: 100%;
             aspect-ratio: 4 / 5;
+            height: clamp(230px, 19vw, 330px);
+            min-height: 230px;
             border-radius: 0;
             overflow: hidden;
             background: #202329;
@@ -700,6 +736,7 @@ function installHubStyles() {
         .anima-hub-thumb img {
             width: 100%;
             height: 100%;
+            min-height: 230px;
             object-fit: cover;
             display: block;
             background: #202329;
@@ -945,6 +982,48 @@ function renderViewButtons(root) {
     });
 }
 
+function sectionUsesSourceSelect(section) {
+    return section === "artist" || section === "character";
+}
+
+function getSourcesForSection(section) {
+    if (section === "artist") return ARTIST_SOURCES;
+    if (section === "character") return CHARACTER_SOURCES;
+    return [];
+}
+
+function getActiveSourceForSection(section) {
+    if (section === "artist") return HUB_STATE.artistSource;
+    if (section === "character") return HUB_STATE.characterSource;
+    return "";
+}
+
+function getSourceStatusForSection(section) {
+    if (section === "artist") {
+        return HUB_STATE.artistDataLoading ? "正在载入画师..." : getArtistSourceStatus(HUB_STATE.artistSource);
+    }
+    if (section === "character") {
+        return HUB_STATE.characterDataLoading ? "正在载入人物..." : getCharacterSourceStatus(HUB_STATE.characterSource);
+    }
+    return "";
+}
+
+function syncSourceSelect(sourceSelect, section) {
+    const sources = getSourcesForSection(section);
+    const optionKey = sources.map(source => source.id).join("|");
+    if (sourceSelect.dataset.optionsKey !== optionKey) {
+        sourceSelect.innerHTML = "";
+        sources.forEach(source => {
+            const option = document.createElement("option");
+            option.value = source.id;
+            option.textContent = source.label;
+            sourceSelect.appendChild(option);
+        });
+        sourceSelect.dataset.optionsKey = optionKey;
+    }
+    sourceSelect.value = getActiveSourceForSection(section);
+}
+
 function renderTaxonomyBar(root, section, rows) {
     const bar = root.querySelector(".anima-hub-taxonomy");
     if (!bar) return;
@@ -956,12 +1035,12 @@ function renderTaxonomyBar(root, section, rows) {
     }
 
     bar.classList.remove("hidden");
-    bar.appendChild(createEl("div", "anima-hub-taxonomy-label", "Subcategories"));
+    bar.appendChild(createEl("div", "anima-hub-taxonomy-label", "子分类"));
 
     const activeId = getActiveTaxonomy(section);
     const counts = getTaxonomyCounts(section, rows);
 
-    const allButton = createEl("button", activeId === "all" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "All");
+    const allButton = createEl("button", activeId === "all" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "全部");
     allButton.type = "button";
     allButton.onclick = () => {
         HUB_STATE.taxonomy[section] = "all";
@@ -1098,6 +1177,7 @@ function renderHub(root) {
     const sourceStatus = root.querySelector(".anima-hub-source-status");
 
     ensureArtistData(root);
+    ensureCharacterData(root);
 
     if (targetSelect) {
         const currentId = HUB_STATE.targetIds[section];
@@ -1125,12 +1205,14 @@ function renderHub(root) {
     renderViewButtons(root);
 
     if (sourceSelect) {
-        sourceSelect.style.display = section === "artist" ? "" : "none";
-        sourceSelect.value = HUB_STATE.artistSource;
+        sourceSelect.style.display = sectionUsesSourceSelect(section) ? "" : "none";
+        if (sectionUsesSourceSelect(section)) {
+            syncSourceSelect(sourceSelect, section);
+        }
     }
     if (sourceStatus) {
-        sourceStatus.style.display = section === "artist" ? "" : "none";
-        sourceStatus.textContent = HUB_STATE.artistDataLoading ? "Loading artists..." : getArtistSourceStatus(HUB_STATE.artistSource);
+        sourceStatus.style.display = sectionUsesSourceSelect(section) ? "" : "none";
+        sourceStatus.textContent = getSourceStatusForSection(section);
     }
 
     const allData = getVisibleData(section);
@@ -1153,6 +1235,10 @@ function renderHub(root) {
             message = `Artist source load failed. ${sourceStatusText}`;
         } else if (section === "artist" && sourceStatusText) {
             message = sourceStatusText;
+        } else if (section === "character" && HUB_STATE.characterDataLoading) {
+            message = getCharacterSourceStatus(HUB_STATE.characterSource) || "人物资料正在载入。";
+        } else if (section === "character" && getCharacterSourceStatus(HUB_STATE.characterSource).startsWith("载入失败")) {
+            message = `人物来源载入失败。${getCharacterSourceStatus(HUB_STATE.characterSource)}`;
         }
         grid.appendChild(createEl("div", "anima-hub-empty", message));
     } else if (!taxonomyFiltered.length) {
@@ -1281,18 +1367,18 @@ function createHub(section, preferredNode) {
     search.oninput = () => renderHub(root);
 
     const sourceSelect = createEl("select", "anima-hub-artist-source");
-    ARTIST_SOURCES.forEach(source => {
-        const option = document.createElement("option");
-        option.value = source.id;
-        option.textContent = source.label;
-        sourceSelect.appendChild(option);
-    });
-    sourceSelect.value = HUB_STATE.artistSource;
     sourceSelect.onchange = () => {
-        HUB_STATE.artistSource = sourceSelect.value;
-        setActiveArtistSource(HUB_STATE.artistSource);
-        HUB_STATE.artistDataLoadedSource = "";
-        HUB_STATE.artistData = [];
+        if (HUB_STATE.activeSection === "artist") {
+            HUB_STATE.artistSource = sourceSelect.value;
+            setActiveArtistSource(HUB_STATE.artistSource);
+            HUB_STATE.artistDataLoadedSource = "";
+            HUB_STATE.artistData = [];
+        } else if (HUB_STATE.activeSection === "character") {
+            HUB_STATE.characterSource = sourceSelect.value;
+            setActiveCharacterSource(HUB_STATE.characterSource);
+            HUB_STATE.characterDataLoadedSource = "";
+            HUB_STATE.characterData = [];
+        }
         renderHub(root);
     };
 
