@@ -2,6 +2,7 @@ import { app } from "../../scripts/app.js";
 import { applyTagsToTarget } from "./anima_apply_tags.js";
 import { ANIMA_SECTION_WIDGETS, getTargetById, resolveAnimaTargets } from "./anima_target_resolver.js";
 import { ARTIST_SOURCES, getActiveArtistSource, getArtistDataForSource, getArtistSourceStatus, setActiveArtistSource } from "./anima_artist_sources.js";
+import { getTaxonomyCategories, getTaxonomyCounts, itemMatchesTaxonomy } from "./anima_taxonomy.js";
 import "./character_data.js";
 import "./clothing_data.js";
 import "./background_data.js";
@@ -32,6 +33,11 @@ const HUB_STATE = {
         clothing: new Map(),
         background: new Map(),
         pose: new Map(),
+    },
+    taxonomy: {
+        clothing: "all",
+        background: "all",
+        pose: "all",
     },
     targetIds: {},
     favoritesConfig: null,
@@ -320,6 +326,14 @@ function getVisibleData(section) {
     return getSectionData(section);
 }
 
+function sectionUsesTaxonomy(section) {
+    return getTaxonomyCategories(section).length > 0;
+}
+
+function getActiveTaxonomy(section) {
+    return HUB_STATE.taxonomy[section] || "all";
+}
+
 function createEl(tag, className, text) {
     const el = document.createElement(tag);
     if (className) el.className = className;
@@ -462,18 +476,72 @@ function installHubStyles() {
             border-radius: 10px;
             box-shadow: 0 24px 80px rgba(0,0,0,0.58);
             display: grid;
-            grid-template-rows: auto auto auto 1fr auto;
+            grid-template-rows: auto auto auto auto 1fr auto;
             overflow: hidden;
             font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         .anima-hub-header,
         .anima-hub-toolbar,
+        .anima-hub-taxonomy,
         .anima-hub-footer {
             padding: 14px 18px;
             border-bottom: 1px solid rgba(255,255,255,0.09);
             display: flex;
             align-items: center;
             gap: 12px;
+        }
+        .anima-hub-taxonomy {
+            padding-top: 10px;
+            padding-bottom: 10px;
+            align-items: flex-start;
+            gap: 10px;
+            overflow-x: auto;
+            scrollbar-width: thin;
+        }
+        .anima-hub-taxonomy.hidden {
+            display: none;
+        }
+        .anima-hub-taxonomy-label {
+            flex: 0 0 auto;
+            min-height: 30px;
+            display: flex;
+            align-items: center;
+            color: #a1a1aa;
+            font-size: 12px;
+            font-weight: 800;
+        }
+        .anima-hub-taxonomy-options {
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 8px;
+            min-width: 0;
+        }
+        .anima-hub-taxonomy-chip {
+            flex: 0 0 auto;
+            min-height: 30px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.045);
+            color: #d4d4d8;
+            border-radius: 7px;
+            padding: 5px 10px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 750;
+            white-space: nowrap;
+        }
+        .anima-hub-taxonomy-chip.active {
+            background: rgba(56,189,248,0.16);
+            border-color: rgba(56,189,248,0.48);
+            color: #ffffff;
+        }
+        .anima-hub-taxonomy-chip:disabled {
+            opacity: 0.42;
+            cursor: not-allowed;
+        }
+        .anima-hub-taxonomy-count {
+            margin-left: 6px;
+            color: #a1a1aa;
+            font-weight: 750;
         }
         .anima-hub-footer {
             border-top: 1px solid rgba(255,255,255,0.09);
@@ -793,8 +861,17 @@ function installHubStyles() {
         }
         @media (max-width: 760px) {
             .anima-hub-toolbar,
+            .anima-hub-taxonomy,
             .anima-hub-footer {
                 flex-wrap: wrap;
+            }
+            .anima-hub-taxonomy-label {
+                width: 100%;
+            }
+            .anima-hub-taxonomy-options {
+                width: 100%;
+                overflow-x: auto;
+                padding-bottom: 2px;
             }
             .anima-hub-target,
             .anima-hub-artist-source {
@@ -812,6 +889,48 @@ function renderViewButtons(root) {
     root.querySelectorAll(".anima-hub-pill").forEach(button => {
         button.classList.toggle("active", button.dataset.view === HUB_STATE.viewMode);
     });
+}
+
+function renderTaxonomyBar(root, section, rows) {
+    const bar = root.querySelector(".anima-hub-taxonomy");
+    if (!bar) return;
+
+    bar.innerHTML = "";
+    if (!sectionUsesTaxonomy(section)) {
+        bar.classList.add("hidden");
+        return;
+    }
+
+    bar.classList.remove("hidden");
+    bar.appendChild(createEl("div", "anima-hub-taxonomy-label", "Subcategory"));
+
+    const options = createEl("div", "anima-hub-taxonomy-options");
+    const activeId = getActiveTaxonomy(section);
+    const counts = getTaxonomyCounts(section, rows);
+
+    const allButton = createEl("button", activeId === "all" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "All");
+    allButton.type = "button";
+    allButton.onclick = () => {
+        HUB_STATE.taxonomy[section] = "all";
+        renderHub(root);
+    };
+    allButton.appendChild(createEl("span", "anima-hub-taxonomy-count", rows.length.toLocaleString()));
+    options.appendChild(allButton);
+
+    getTaxonomyCategories(section).forEach(category => {
+        const count = counts.get(category.id) || 0;
+        const button = createEl("button", activeId === category.id ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", category.label);
+        button.type = "button";
+        button.disabled = count === 0;
+        button.onclick = () => {
+            HUB_STATE.taxonomy[section] = category.id;
+            renderHub(root);
+        };
+        button.appendChild(createEl("span", "anima-hub-taxonomy-count", count.toLocaleString()));
+        options.appendChild(button);
+    });
+
+    bar.appendChild(options);
 }
 
 function createOverlayButton(label, onClick, primary = false) {
@@ -955,9 +1074,13 @@ function renderHub(root) {
     }
 
     const allData = getVisibleData(section);
+    renderTaxonomyBar(root, section, allData);
+
     const selectedMap = HUB_STATE.selected[section];
     const favoriteMap = getFavoritesMap(section);
-    const filtered = allData.filter(item => !query || getSearchText(section, item).includes(query)).slice(0, 240);
+    const taxonomyId = getActiveTaxonomy(section);
+    const taxonomyFiltered = allData.filter(item => itemMatchesTaxonomy(section, item, taxonomyId));
+    const filtered = taxonomyFiltered.filter(item => !query || getSearchText(section, item).includes(query)).slice(0, 240);
 
     const grid = root.querySelector(".anima-hub-grid");
     grid.innerHTML = "";
@@ -972,6 +1095,8 @@ function renderHub(root) {
             message = sourceStatusText;
         }
         grid.appendChild(createEl("div", "anima-hub-empty", message));
+    } else if (!taxonomyFiltered.length) {
+        grid.appendChild(createEl("div", "anima-hub-empty", "No items in this subcategory."));
     } else if (!filtered.length) {
         grid.appendChild(createEl("div", "anima-hub-empty", "No matching items."));
     } else {
@@ -1137,6 +1262,7 @@ function createHub(section, preferredNode) {
     toolbar.appendChild(search);
     toolbar.appendChild(target);
 
+    const taxonomy = createEl("div", "anima-hub-taxonomy hidden");
     const grid = createEl("div", "anima-hub-grid");
 
     const footer = createEl("div", "anima-hub-footer");
@@ -1167,6 +1293,7 @@ function createHub(section, preferredNode) {
     root.appendChild(header);
     root.appendChild(tabs);
     root.appendChild(toolbar);
+    root.appendChild(taxonomy);
     root.appendChild(grid);
     root.appendChild(footer);
 
