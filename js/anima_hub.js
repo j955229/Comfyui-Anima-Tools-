@@ -31,6 +31,7 @@ const HUB_STATE = {
     characterSource: getActiveCharacterSource(),
     characterData: [],
     characterDataLoadedSource: "",
+    characterDataLoadedQuery: "",
     characterDataLoading: false,
     characterDataRequestId: 0,
     selected: {
@@ -456,15 +457,17 @@ async function refreshArtistData(root) {
 async function refreshCharacterData(root) {
     const source = HUB_STATE.characterSource;
     const requestId = ++HUB_STATE.characterDataRequestId;
+    const query = root?.querySelector(".anima-hub-search")?.value?.trim?.() || "";
     HUB_STATE.characterDataLoading = true;
 
-    const data = await getCharacterDataForSource(source);
+    const data = await getCharacterDataForSource(source, query);
     if (requestId !== HUB_STATE.characterDataRequestId || source !== HUB_STATE.characterSource) {
         return;
     }
 
     HUB_STATE.characterData = data;
     HUB_STATE.characterDataLoadedSource = source;
+    HUB_STATE.characterDataLoadedQuery = query;
     HUB_STATE.characterDataLoading = false;
     if (root && activeHub?.contains(root)) {
         renderHub(root);
@@ -480,7 +483,8 @@ function ensureArtistData(root) {
 
 function ensureCharacterData(root) {
     if (HUB_STATE.activeSection !== "character") return;
-    if (HUB_STATE.characterDataLoadedSource === HUB_STATE.characterSource) return;
+    const query = root?.querySelector(".anima-hub-search")?.value?.trim?.() || "";
+    if (HUB_STATE.characterDataLoadedSource === HUB_STATE.characterSource && HUB_STATE.characterDataLoadedQuery === query) return;
     if (HUB_STATE.characterDataLoading) return;
     refreshCharacterData(root);
 }
@@ -702,7 +706,8 @@ function installHubStyles() {
         }
         .anima-hub-card {
             position: relative;
-            min-height: 360px;
+            height: clamp(440px, 34vw, 620px);
+            min-height: 440px;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.09);
             background: rgba(255,255,255,0.035);
@@ -720,9 +725,8 @@ function installHubStyles() {
         .anima-hub-thumb {
             position: relative;
             width: 100%;
-            aspect-ratio: 4 / 5;
-            height: clamp(230px, 19vw, 330px);
-            min-height: 230px;
+            height: 100%;
+            min-height: 440px;
             border-radius: 0;
             overflow: hidden;
             background: #202329;
@@ -736,31 +740,55 @@ function installHubStyles() {
         .anima-hub-thumb img {
             width: 100%;
             height: 100%;
-            min-height: 230px;
-            object-fit: cover;
+            min-height: 440px;
+            object-fit: contain;
             display: block;
-            background: #202329;
+            background: #2b2d31;
         }
         .anima-hub-overlay-panel {
             position: absolute;
             inset: 0;
+            z-index: 3;
             display: flex;
             flex-direction: column;
             opacity: 0;
             pointer-events: none;
             transition: opacity 0.16s ease;
-            background: linear-gradient(to top, rgba(7,7,12,0.9) 28%, rgba(7,7,12,0.62) 68%, rgba(7,7,12,0.2));
+            background: linear-gradient(to bottom, rgba(7,7,12,0.76), rgba(7,7,12,0.46) 48%, rgba(7,7,12,0.88));
         }
         .anima-hub-thumb:hover .anima-hub-overlay-panel,
         .anima-hub-overlay-panel:focus-within {
             opacity: 1;
             pointer-events: auto;
         }
+        .anima-hub-overlay-top {
+            flex: 0 0 auto;
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            padding: 12px 12px 0;
+        }
+        .anima-hub-overlay-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 999px;
+            border: 1px solid rgba(255,255,255,0.24);
+            background: rgba(0,0,0,0.42);
+            color: #ffffff;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: 850;
+            line-height: 1;
+        }
+        .anima-hub-overlay-icon.active {
+            background: rgba(14,165,233,0.72);
+            border-color: rgba(125,211,252,0.7);
+        }
         .anima-hub-overlay-scroll {
             flex: 1;
             min-height: 0;
             overflow-y: auto;
-            padding: 14px 13px 6px;
+            padding: 8px 13px 6px;
         }
         .anima-hub-overlay-label {
             font-size: 9px;
@@ -804,7 +832,7 @@ function installHubStyles() {
             display: flex;
             flex-direction: column;
             gap: 6px;
-            padding: 8px;
+            padding: 8px 8px 92px;
         }
         .anima-hub-overlay-row {
             display: grid;
@@ -845,7 +873,6 @@ function installHubStyles() {
             line-height: 1.35;
             overflow-wrap: anywhere;
             min-height: 20px;
-            padding: 10px 11px 0;
         }
         .anima-hub-card-meta,
         .anima-hub-count {
@@ -854,15 +881,33 @@ function installHubStyles() {
             color: #a1a1aa;
             overflow-wrap: anywhere;
         }
-        .anima-hub-card-meta {
-            padding: 5px 11px 0;
-        }
         .anima-hub-card-actions {
             display: grid;
             grid-template-columns: 1fr;
             gap: 7px;
             margin-top: auto;
             padding: 10px 11px 11px;
+        }
+        .anima-hub-card-caption {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 4;
+            padding: 14px 14px 16px;
+            background: linear-gradient(to top, rgba(11,16,24,0.96), rgba(11,16,24,0.78) 72%, rgba(11,16,24,0));
+            pointer-events: none;
+        }
+        .anima-hub-card-caption .anima-hub-card-title {
+            padding: 0;
+            font-size: 16px;
+        }
+        .anima-hub-card-caption .anima-hub-card-meta {
+            padding: 4px 0 0;
+            text-transform: uppercase;
+            font-size: 11px;
+            font-weight: 800;
+            color: #a9a6c8;
         }
         .anima-hub-card-action {
             min-height: 32px;
@@ -983,6 +1028,10 @@ function renderViewButtons(root) {
 }
 
 function sectionUsesSourceSelect(section) {
+    return section === "artist";
+}
+
+function sectionUsesSourceStatus(section) {
     return section === "artist" || section === "character";
 }
 
@@ -1096,8 +1145,22 @@ function createCardOverlay(root, section, item, imageUrl) {
     const selected = HUB_STATE.selected[section].get(key);
     const selectedMode = selected?._hubCharacterMode || "";
     const danbooruUrl = getDanbooruUrl(section, item);
+    const favoriteMap = getFavoritesMap(section);
 
     const overlay = createEl("div", "anima-hub-overlay-panel");
+    const top = createEl("div", "anima-hub-overlay-top");
+    const favorite = createEl("button", favoriteMap.has(key) ? "anima-hub-overlay-icon active" : "anima-hub-overlay-icon", favoriteMap.has(key) ? "♥" : "♡");
+    favorite.type = "button";
+    favorite.title = favoriteMap.has(key) ? "移除收藏" : "加入收藏";
+    favorite.onclick = async event => {
+        event.stopPropagation();
+        favorite.disabled = true;
+        await toggleFavorite(section, item);
+        renderHub(root);
+    };
+    top.appendChild(favorite);
+    overlay.appendChild(top);
+
     const scroll = createEl("div", "anima-hub-overlay-scroll");
     scroll.appendChild(createEl("div", "anima-hub-overlay-label", "Trigger"));
     const trigger = createEl("div", "anima-hub-overlay-trigger", section === "artist" ? `@${item?.name || ""}` : getItemTitle(section, item));
@@ -1211,7 +1274,7 @@ function renderHub(root) {
         }
     }
     if (sourceStatus) {
-        sourceStatus.style.display = sectionUsesSourceSelect(section) ? "" : "none";
+        sourceStatus.style.display = sectionUsesSourceStatus(section) ? "" : "none";
         sourceStatus.textContent = getSourceStatusForSection(section);
     }
 
@@ -1268,24 +1331,12 @@ function renderHub(root) {
             }
             thumb.appendChild(createCardOverlay(root, section, item, imageUrl));
 
-            const title = createEl("div", "anima-hub-card-title", getItemTitle(section, item));
-            const meta = createEl("div", "anima-hub-card-meta", getItemMeta(section, item) || item?.tags || "");
+            const caption = createEl("div", "anima-hub-card-caption");
+            caption.appendChild(createEl("div", "anima-hub-card-title", getItemTitle(section, item)));
+            caption.appendChild(createEl("div", "anima-hub-card-meta", getItemMeta(section, item) || item?.tags || ""));
+            thumb.appendChild(caption);
 
-            const actions = createEl("div", "anima-hub-card-actions");
-            const favorite = createEl("button", favoriteMap.has(key) ? "anima-hub-card-action primary" : "anima-hub-card-action", favoriteMap.has(key) ? "Saved" : "Favorite");
-            favorite.type = "button";
-            favorite.title = favoriteMap.has(key) ? "Remove favorite" : "Add favorite";
-            favorite.onclick = async () => {
-                favorite.disabled = true;
-                await toggleFavorite(section, item);
-                renderHub(root);
-            };
-
-            actions.appendChild(favorite);
             card.appendChild(thumb);
-            card.appendChild(title);
-            card.appendChild(meta);
-            card.appendChild(actions);
             grid.appendChild(card);
         });
     }
