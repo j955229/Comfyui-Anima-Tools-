@@ -15,6 +15,9 @@ const SECTIONS = [
     { id: "clothing", label: "服装", widget: "clothing_tags", accent: "#a78bfa" },
     { id: "background", label: "背景", widget: "background_tags", accent: "#34d399" },
     { id: "pose", label: "姿势", widget: "pose_tags", accent: "#f59e0b" },
+    { id: "composition", label: "构图", widget: "composition_tags", accent: "#22d3ee" },
+    { id: "expression", label: "表情", widget: "expression_tags", accent: "#fb7185" },
+    { id: "lighting", label: "光线", widget: "lighting_tags", accent: "#facc15" },
 ];
 
 const FAVORITES_STORAGE_KEY = "anima-hub-favorites-fallback";
@@ -41,6 +44,9 @@ const HUB_STATE = {
         clothing: "",
         background: "",
         pose: "",
+        composition: "",
+        expression: "",
+        lighting: "",
     },
     imageVariants: {},
     imageFlipUntil: {},
@@ -51,6 +57,9 @@ const HUB_STATE = {
         clothing: new Map(),
         background: new Map(),
         pose: new Map(),
+        composition: new Map(),
+        expression: new Map(),
+        lighting: new Map(),
     },
     taxonomy: {
         character: "all",
@@ -201,6 +210,9 @@ function getSectionData(section) {
     if (section === "clothing") return window.clothingData || [];
     if (section === "background") return window.backgroundData || [];
     if (section === "pose") return window.poseData || [];
+    if (section === "composition") return [];
+    if (section === "expression") return [];
+    if (section === "lighting") return [];
     return [];
 }
 
@@ -400,6 +412,9 @@ async function toggleFavorite(section, item) {
 function getVisibleData(section) {
     if (HUB_STATE.viewMode === "favorites") {
         return Array.from(getFavoritesMap(section).values());
+    }
+    if (HUB_STATE.viewMode === "selected") {
+        return Array.from(HUB_STATE.selected[section].values());
     }
     return getSectionData(section);
 }
@@ -1351,6 +1366,10 @@ function installHubStyles() {
 function renderViewButtons(root) {
     root.querySelectorAll(".anima-hub-pill").forEach(button => {
         button.classList.toggle("active", button.dataset.view === HUB_STATE.viewMode);
+        if (button.dataset.view === "selected") {
+            const selectedCount = HUB_STATE.selected[HUB_STATE.activeSection]?.size || 0;
+            button.textContent = `Selected ${selectedCount}`;
+        }
     });
 }
 
@@ -1737,23 +1756,30 @@ function renderHub(root) {
     const selectedMap = HUB_STATE.selected[section];
     const favoriteMap = getFavoritesMap(section);
     const taxonomyId = getActiveTaxonomy(section);
-    const taxonomyFiltered = allData.filter(item => itemMatchesTaxonomy(section, item, taxonomyId));
-    const filtered = taxonomyFiltered.filter(item => !query || getSearchText(section, item).includes(query)).slice(0, 240);
+    const taxonomyFiltered = HUB_STATE.viewMode === "selected" ? allData : allData.filter(item => itemMatchesTaxonomy(section, item, taxonomyId));
+    const filtered = HUB_STATE.viewMode === "selected" ? taxonomyFiltered.slice(0, 240) : taxonomyFiltered.filter(item => !query || getSearchText(section, item).includes(query)).slice(0, 240);
 
     const grid = root.querySelector(".anima-hub-grid");
     grid.innerHTML = "";
     if (!allData.length) {
         const sourceStatusText = section === "artist" ? getArtistSourceStatus(HUB_STATE.artistSource) : "";
-        let message = HUB_STATE.viewMode === "favorites" ? "No favorites yet." : `${sectionDef.label} data is loading.`;
-        if (section === "artist" && HUB_STATE.artistDataLoading) {
+        let message = `${sectionDef.label} data is loading.`;
+        if (HUB_STATE.viewMode === "favorites") {
+            message = "No favorites yet.";
+        } else if (HUB_STATE.viewMode === "selected") {
+            message = "No selected cards yet.";
+        } else if (section === "composition" || section === "expression" || section === "lighting") {
+            message = `${sectionDef.label} is empty for now.`;
+        }
+        if (HUB_STATE.viewMode === "all" && section === "artist" && HUB_STATE.artistDataLoading) {
             message = sourceStatusText || "Artist data is loading.";
-        } else if (section === "artist" && sourceStatusText.startsWith("Failed")) {
+        } else if (HUB_STATE.viewMode === "all" && section === "artist" && sourceStatusText.startsWith("Failed")) {
             message = `Artist source load failed. ${sourceStatusText}`;
-        } else if (section === "artist" && sourceStatusText) {
+        } else if (HUB_STATE.viewMode === "all" && section === "artist" && sourceStatusText) {
             message = sourceStatusText;
-        } else if (section === "character" && HUB_STATE.characterDataLoading) {
+        } else if (HUB_STATE.viewMode === "all" && section === "character" && HUB_STATE.characterDataLoading) {
             message = getCharacterSourceStatus(HUB_STATE.characterSource) || "人物资料正在载入。";
-        } else if (section === "character" && getCharacterSourceStatus(HUB_STATE.characterSource).startsWith("载入失败")) {
+        } else if (HUB_STATE.viewMode === "all" && section === "character" && getCharacterSourceStatus(HUB_STATE.characterSource).startsWith("载入失败")) {
             message = `人物来源载入失败。${getCharacterSourceStatus(HUB_STATE.characterSource)}`;
         }
         grid.appendChild(createEl("div", "anima-hub-empty", message));
@@ -1815,7 +1841,16 @@ function switchSection(root, section) {
     renderHub(root);
 }
 
+function resetHubSearchQueries() {
+    SECTIONS.forEach(section => {
+        HUB_STATE.searchQueries[section.id] = "";
+    });
+}
+
 function closeHub() {
+    if (activeHub) {
+        resetHubSearchQueries();
+    }
     activeHub?.remove();
     activeHub = null;
 }
@@ -1915,8 +1950,16 @@ function createHub(section, preferredNode) {
         HUB_STATE.viewMode = "favorites";
         renderHub(root);
     };
+    const selectedView = createEl("button", "anima-hub-pill", "Selected 0");
+    selectedView.type = "button";
+    selectedView.dataset.view = "selected";
+    selectedView.onclick = () => {
+        HUB_STATE.viewMode = "selected";
+        renderHub(root);
+    };
     view.appendChild(allView);
     view.appendChild(favoritesView);
+    view.appendChild(selectedView);
 
     const target = createEl("select", "anima-hub-target");
     target.onchange = () => {

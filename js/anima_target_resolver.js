@@ -7,6 +7,9 @@ export const ANIMA_SECTION_WIDGETS = {
     clothing: "clothing_tags",
     background: "background_tags",
     pose: "pose_tags",
+    composition: "composition_tags",
+    expression: "expression_tags",
+    lighting: "lighting_tags",
 };
 
 function getGraphNodes() {
@@ -55,4 +58,3 @@ export function getTargetById(section, id, preferredNode = null) {
     const targets = resolveAnimaTargets(section, preferredNode);
     return targets.find(target => target.id === id) || targets[0] || null;
 }
-
