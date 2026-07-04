@@ -227,6 +227,122 @@ const TAXONOMY_GROUPS = {
             ],
         },
     ],
+    composition: [
+        {
+            id: "camera_angle",
+            label: "镜头角度",
+            children: [
+                { id: "angle_high", label: "俯视", keywords: ["high angle", "from above", "looking down", "bird's-eye"] },
+                { id: "angle_low", label: "仰视", keywords: ["low angle", "from below", "looking up", "worm's-eye"] },
+                { id: "angle_tilted", label: "倾斜", keywords: ["dutch angle", "tilted angle", "diagonal"] },
+                { id: "angle_pov", label: "主观视角", keywords: ["pov", "point of view", "first-person", "over shoulder"] },
+                { id: "angle_side", label: "侧面", keywords: ["profile", "side view", "looking to the side"] },
+            ],
+        },
+        {
+            id: "shot_size",
+            label: "景别",
+            children: [
+                { id: "shot_close", label: "特写", keywords: ["close-up", "extreme close-up", "face focus"] },
+                { id: "shot_half", label: "半身", keywords: ["upper body", "medium close-up", "cowboy shot", "knees up"] },
+                { id: "shot_full", label: "全身", keywords: ["full body", "full-length"] },
+                { id: "shot_wide", label: "远景", keywords: ["wide shot", "long shot", "scenery focus"] },
+            ],
+        },
+        {
+            id: "framing_depth",
+            label: "构成与透视",
+            children: [
+                { id: "frame_center", label: "居中与对称", keywords: ["centered", "symmetrical", "symmetry"] },
+                { id: "frame_offcenter", label: "偏中心", keywords: ["rule of thirds", "off-center", "balanced"] },
+                { id: "frame_negative", label: "留白", keywords: ["negative space", "minimalism", "simple background"] },
+                { id: "depth_blur", label: "景深", keywords: ["depth of field", "blurry foreground", "foreground blur"] },
+                { id: "depth_distort", label: "透视变形", keywords: ["forced perspective", "fisheye", "wide-angle", "foreshortening"] },
+            ],
+        },
+    ],
+    expression: [
+        {
+            id: "basic_emotion",
+            label: "基础情绪",
+            children: [
+                { id: "emotion_happy", label: "开心", keywords: ["smile", "grin", "laughing", "happy"] },
+                { id: "emotion_angry", label: "生气", keywords: ["angry", "annoyed", "furrowed brow"] },
+                { id: "emotion_sad", label: "悲伤", keywords: ["sad", "crying", "tears"] },
+                { id: "emotion_surprise", label: "惊讶害怕", keywords: ["surprised", "scared", "fear", "wide eyes"] },
+                { id: "emotion_shy", label: "害羞尴尬", keywords: ["embarrassed", "blush", "averting eyes"] },
+            ],
+        },
+        {
+            id: "mouth",
+            label: "嘴型",
+            children: [
+                { id: "mouth_open", label: "张嘴", keywords: ["open mouth", "parted lips"] },
+                { id: "mouth_closed", label: "闭嘴", keywords: ["closed mouth", "mouth closed"] },
+                { id: "mouth_pout", label: "嘟嘴", keywords: ["pout", "pouting", "puffed cheeks"] },
+                { id: "mouth_tongue", label: "吐舌", keywords: ["tongue out", "tongue"] },
+                { id: "mouth_teeth", label: "牙齿", keywords: ["clenched teeth", "teeth", "grimace"] },
+            ],
+        },
+        {
+            id: "eyes_face",
+            label: "眼神与脸部",
+            children: [
+                { id: "eyes_closed", label: "闭眼", keywords: ["closed eyes", "eyes closed"] },
+                { id: "eyes_sleepy", label: "困倦", keywords: ["half-closed eyes", "sleepy", "relaxed"] },
+                { id: "eyes_sparkle", label: "闪亮眼", keywords: ["sparkling eyes", "starry eyes", "excited"] },
+                { id: "eyes_love", label: "爱心眼", keywords: ["heart-shaped pupils", "heart eyes", "love"] },
+                { id: "face_blank", label: "无表情", keywords: ["expressionless", "blank stare", "emotionless"] },
+                { id: "face_smug", label: "得意", keywords: ["smug", "confident"] },
+            ],
+        },
+    ],
+    lighting: [
+        {
+            id: "light_direction",
+            label: "光源方向",
+            children: [
+                { id: "light_back", label: "逆光", keywords: ["backlighting", "backlight", "silhouette"] },
+                { id: "light_rim", label: "轮廓光", keywords: ["rim lighting", "rim light", "edge light"] },
+                { id: "light_side", label: "侧光", keywords: ["side lighting", "sidelighting", "side light"] },
+                { id: "light_under", label: "底光", keywords: ["underlighting", "underlight", "lit from below"] },
+                { id: "light_top", label: "顶光", keywords: ["overhead lighting", "top light", "hard shadows"] },
+            ],
+        },
+        {
+            id: "light_quality",
+            label: "光线质感",
+            children: [
+                { id: "quality_soft", label: "柔光", keywords: ["soft lighting", "soft light", "gentle shadows"] },
+                { id: "quality_hard", label: "硬光", keywords: ["hard lighting", "hard light", "sharp shadows"] },
+                { id: "quality_dramatic", label: "戏剧光", keywords: ["dramatic lighting", "high contrast", "deep shadows"] },
+                { id: "quality_cinematic", label: "电影感", keywords: ["cinematic lighting", "film lighting", "dramatic shadows"] },
+                { id: "quality_chiaroscuro", label: "明暗对照", keywords: ["chiaroscuro", "tenebrism"] },
+            ],
+        },
+        {
+            id: "light_effect",
+            label: "光效",
+            children: [
+                { id: "effect_volumetric", label: "体积光", keywords: ["volumetric lighting", "light rays", "atmosphere"] },
+                { id: "effect_godrays", label: "光束", keywords: ["god rays", "crepuscular rays", "light rays"] },
+                { id: "effect_flare", label: "镜头光晕", keywords: ["lens flare", "light leak"] },
+                { id: "effect_bloom", label: "泛光", keywords: ["bloom", "glow", "glowing"] },
+                { id: "effect_bokeh", label: "散景", keywords: ["bokeh", "blurry background"] },
+            ],
+        },
+        {
+            id: "time_color",
+            label: "时间与色彩",
+            children: [
+                { id: "time_golden", label: "黄金时刻", keywords: ["golden hour", "sunset", "warm lighting"] },
+                { id: "time_blue", label: "蓝调时刻", keywords: ["blue hour", "dusk", "cool lighting"] },
+                { id: "time_moon", label: "月光", keywords: ["moonlight", "night"] },
+                { id: "color_neon", label: "霓虹", keywords: ["neon lighting", "neon lights", "cyberpunk"] },
+                { id: "color_warmcool", label: "冷暖光", keywords: ["warm lighting", "cool lighting", "colored lighting"] },
+            ],
+        },
+    ],
 };
 
 function normalizeText(value) {

@@ -528,6 +528,137 @@ class AnimaPoseTagSelectorPlus:
 
         return _anima_selector_tags_result({"pose_tags": pose_tags}, final_text)
 
+class _AnimaPlainTagSelectorBase:
+    WIDGET_NAME = ""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                cls.WIDGET_NAME: ("STRING", {"multiline": True, "default": ""}),
+                "mode": (["append", "override"], {"default": "append"}),
+            },
+            "optional": {
+                "opt_prompt": ("STRING", {"forceInput": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def _process_plain_tags(self, tag_value, mode, opt_prompt=""):
+        tag_value = str(tag_value or "")
+        tags_list = [t.strip() for t in tag_value.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_tags = ", ".join(processed_tags)
+        if opt_prompt and opt_prompt.strip():
+            opt_prompt = opt_prompt.strip()
+            if mode == "append":
+                if joined_tags:
+                    final_text = f"{joined_tags}, {opt_prompt}" if opt_prompt.endswith(",") else f"{joined_tags}, {opt_prompt}, "
+                else:
+                    final_text = opt_prompt
+            else:
+                final_text = f"{joined_tags}, " if joined_tags else ""
+        else:
+            final_text = f"{joined_tags}, " if joined_tags else ""
+
+        return _anima_selector_tags_result({self.WIDGET_NAME: tag_value}, final_text)
+
+class _AnimaPlainTagSelectorPlusBase:
+    WIDGET_NAME = ""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                cls.WIDGET_NAME: ("STRING", {"multiline": True, "default": ""}),
+                "extra_text": ("STRING", {"multiline": True, "default": ""}),
+                "separator": ("STRING", {"default": ", "}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "process_tags"
+    CATEGORY = "AnimaArt"
+
+    def _process_plain_tags_plus(self, tag_value, extra_text, separator=", "):
+        tag_value = str(tag_value or "")
+        tags_list = [t.strip() for t in tag_value.split(",") if t.strip()]
+        processed_tags = []
+
+        for tag in tags_list:
+            if tag.startswith("_raw_:"):
+                processed_tags.append(tag[6:])
+                continue
+            if tag:
+                processed_tags.append(tag)
+
+        joined_tags = ", ".join(processed_tags)
+        if joined_tags:
+            joined_tags += ", "
+
+        extra_text_clean = extra_text.strip() if extra_text else ""
+        if extra_text_clean and joined_tags:
+            sep = separator if separator is not None else ", "
+            if sep.strip() == "," or sep.strip() == "":
+                final_text = f"{joined_tags}{extra_text_clean}"
+            else:
+                final_text = f"{joined_tags.rstrip(', ')}{sep}{extra_text_clean}"
+        elif extra_text_clean:
+            final_text = extra_text_clean
+        else:
+            final_text = joined_tags
+
+        return _anima_selector_tags_result({self.WIDGET_NAME: tag_value}, final_text)
+
+class AnimaCompositionTagSelector(_AnimaPlainTagSelectorBase):
+    WIDGET_NAME = "composition_tags"
+
+    def process_tags(self, composition_tags, mode, opt_prompt=""):
+        return self._process_plain_tags(composition_tags, mode, opt_prompt)
+
+class AnimaCompositionTagSelectorPlus(_AnimaPlainTagSelectorPlusBase):
+    WIDGET_NAME = "composition_tags"
+
+    def process_tags(self, composition_tags, extra_text, separator=", "):
+        return self._process_plain_tags_plus(composition_tags, extra_text, separator)
+
+class AnimaExpressionTagSelector(_AnimaPlainTagSelectorBase):
+    WIDGET_NAME = "expression_tags"
+
+    def process_tags(self, expression_tags, mode, opt_prompt=""):
+        return self._process_plain_tags(expression_tags, mode, opt_prompt)
+
+class AnimaExpressionTagSelectorPlus(_AnimaPlainTagSelectorPlusBase):
+    WIDGET_NAME = "expression_tags"
+
+    def process_tags(self, expression_tags, extra_text, separator=", "):
+        return self._process_plain_tags_plus(expression_tags, extra_text, separator)
+
+class AnimaLightingTagSelector(_AnimaPlainTagSelectorBase):
+    WIDGET_NAME = "lighting_tags"
+
+    def process_tags(self, lighting_tags, mode, opt_prompt=""):
+        return self._process_plain_tags(lighting_tags, mode, opt_prompt)
+
+class AnimaLightingTagSelectorPlus(_AnimaPlainTagSelectorPlusBase):
+    WIDGET_NAME = "lighting_tags"
+
+    def process_tags(self, lighting_tags, extra_text, separator=", "):
+        return self._process_plain_tags_plus(lighting_tags, extra_text, separator)
+
 class AnimaPromptPlus:
     @classmethod
     def INPUT_TYPES(cls):
@@ -1157,6 +1288,12 @@ NODE_CLASS_MAPPINGS = {
     "AnimaBackgroundTagSelectorPlus": AnimaBackgroundTagSelectorPlus,
     "AnimaPoseTagSelector": AnimaPoseTagSelector,
     "AnimaPoseTagSelectorPlus": AnimaPoseTagSelectorPlus,
+    "AnimaCompositionTagSelector": AnimaCompositionTagSelector,
+    "AnimaCompositionTagSelectorPlus": AnimaCompositionTagSelectorPlus,
+    "AnimaExpressionTagSelector": AnimaExpressionTagSelector,
+    "AnimaExpressionTagSelectorPlus": AnimaExpressionTagSelectorPlus,
+    "AnimaLightingTagSelector": AnimaLightingTagSelector,
+    "AnimaLightingTagSelectorPlus": AnimaLightingTagSelectorPlus,
     "AnimaPromptPlus": AnimaPromptPlus,
     "AnimaPromptComposer": AnimaPromptComposer,
     "AnimaMultiLoraLoader": AnimaMultiLoraLoader
@@ -1173,6 +1310,12 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaBackgroundTagSelectorPlus": "Anima Background Tag Selector+",
     "AnimaPoseTagSelector": "Anima Pose Tag Selector",
     "AnimaPoseTagSelectorPlus": "Anima Pose Tag Selector+",
+    "AnimaCompositionTagSelector": "Anima Composition Tag Selector",
+    "AnimaCompositionTagSelectorPlus": "Anima Composition Tag Selector+",
+    "AnimaExpressionTagSelector": "Anima Expression Tag Selector",
+    "AnimaExpressionTagSelectorPlus": "Anima Expression Tag Selector+",
+    "AnimaLightingTagSelector": "Anima Lighting Tag Selector",
+    "AnimaLightingTagSelectorPlus": "Anima Lighting Tag Selector+",
     "AnimaPromptPlus": "Anima Prompt Plus",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
     "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
@@ -1210,6 +1353,12 @@ SELECTOR_RANDOM_INPUTS = {
     "AnimaBackgroundTagSelectorPlus": {"background": "background_tags"},
     "AnimaPoseTagSelector": {"pose": "pose_tags"},
     "AnimaPoseTagSelectorPlus": {"pose": "pose_tags"},
+    "AnimaCompositionTagSelector": {"composition": "composition_tags"},
+    "AnimaCompositionTagSelectorPlus": {"composition": "composition_tags"},
+    "AnimaExpressionTagSelector": {"expression": "expression_tags"},
+    "AnimaExpressionTagSelectorPlus": {"expression": "expression_tags"},
+    "AnimaLightingTagSelector": {"lighting": "lighting_tags"},
+    "AnimaLightingTagSelectorPlus": {"lighting": "lighting_tags"},
     "AnimaPromptPlus": {
         "artist": "artist_tags",
         "character": "character_tags",
@@ -1230,6 +1379,12 @@ SELECTOR_WIDGET_ORDERS = {
     "AnimaBackgroundTagSelectorPlus": ["background_tags", "extra_text", "separator"],
     "AnimaPoseTagSelector": ["pose_tags", "mode"],
     "AnimaPoseTagSelectorPlus": ["pose_tags", "extra_text", "separator"],
+    "AnimaCompositionTagSelector": ["composition_tags", "mode"],
+    "AnimaCompositionTagSelectorPlus": ["composition_tags", "extra_text", "separator"],
+    "AnimaExpressionTagSelector": ["expression_tags", "mode"],
+    "AnimaExpressionTagSelectorPlus": ["expression_tags", "extra_text", "separator"],
+    "AnimaLightingTagSelector": ["lighting_tags", "mode"],
+    "AnimaLightingTagSelectorPlus": ["lighting_tags", "extra_text", "separator"],
     "AnimaPromptPlus": [
         "quality_prompt",
         "artist_tags",
@@ -1402,7 +1557,7 @@ def get_favorites_path():
     os.makedirs(user_dir, exist_ok=True)
     return os.path.join(user_dir, "anima_tools_favorites.json")
 
-FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background", "pose"]
+FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background", "pose", "composition", "expression", "lighting"]
 
 def get_default_favorites_data():
     return {

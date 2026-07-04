@@ -8,6 +8,9 @@ import "./character_data.js";
 import "./clothing_data.js";
 import "./background_data.js";
 import "./pose_data.js";
+import "./composition_data.js";
+import "./expression_data.js";
+import "./lighting_data.js";
 
 const SECTIONS = [
     { id: "artist", label: "画师", widget: "artist_tags", accent: "#38bdf8" },
@@ -222,9 +225,9 @@ function getSectionData(section) {
     if (section === "clothing") return window.clothingData || [];
     if (section === "background") return window.backgroundData || [];
     if (section === "pose") return window.poseData || [];
-    if (section === "composition") return [];
-    if (section === "expression") return [];
-    if (section === "lighting") return [];
+    if (section === "composition") return window.compositionData || [];
+    if (section === "expression") return window.expressionData || [];
+    if (section === "lighting") return window.lightingData || [];
     return [];
 }
 
