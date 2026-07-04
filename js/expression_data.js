@@ -1,278 +1,373 @@
 const expressionData = [
   {
-    "id": "expression_emotion_0001",
+    "id": "expression_0001",
     "name": "Smile",
-    "name_zh": "微笑",
+    "name_zh": "Smile",
     "tags": "smile, gentle smile,",
-    "tags_zh": "微笑, 温柔微笑",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["smile", "gentle", "happy"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "smile, gentle smile,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "smile",
+      "gentle smile"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05.png"
   },
   {
-    "id": "expression_emotion_0002",
+    "id": "expression_0002",
     "name": "Grin",
-    "name_zh": "咧嘴笑",
+    "name_zh": "Grin",
     "tags": "grin, open smile,",
-    "tags_zh": "咧嘴笑, 开朗笑容",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["grin", "open smile", "happy"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "grin, open smile,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "grin",
+      "open smile"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_01.png"
   },
   {
-    "id": "expression_emotion_0003",
+    "id": "expression_0003",
     "name": "Laughing",
-    "name_zh": "大笑",
+    "name_zh": "Laughing",
     "tags": "laughing, open mouth, smile,",
-    "tags_zh": "大笑, 张嘴, 笑容",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["laughing", "open mouth", "joy"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "laughing, open mouth, smile,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "laughing",
+      "open mouth",
+      "smile"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_02.png"
   },
   {
-    "id": "expression_emotion_0004",
+    "id": "expression_0004",
     "name": "Angry",
-    "name_zh": "生气",
+    "name_zh": "Angry",
     "tags": "angry, anger vein, furrowed brow,",
-    "tags_zh": "生气, 青筋, 皱眉",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["angry", "furrowed brow", "intense"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "angry, anger vein, furrowed brow,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "angry",
+      "anger vein",
+      "furrowed brow"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_03.png"
   },
   {
-    "id": "expression_emotion_0005",
+    "id": "expression_0005",
     "name": "Annoyed",
-    "name_zh": "不耐烦",
+    "name_zh": "Annoyed",
     "tags": "annoyed, half-closed eyes, frown,",
-    "tags_zh": "不耐烦, 半闭眼, 皱眉",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["annoyed", "half-closed eyes", "frown"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "annoyed, half-closed eyes, frown,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "annoyed",
+      "half-closed eyes",
+      "frown"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_04.png"
   },
   {
-    "id": "expression_emotion_0006",
+    "id": "expression_0006",
     "name": "Sad",
-    "name_zh": "悲伤",
+    "name_zh": "Sad",
     "tags": "sad, downcast eyes, frown,",
-    "tags_zh": "悲伤, 垂眼, 皱眉",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["sad", "downcast", "frown"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "sad, downcast eyes, frown,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "sad",
+      "downcast eyes",
+      "frown"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_05.png"
   },
   {
-    "id": "expression_emotion_0007",
+    "id": "expression_0007",
     "name": "Crying",
-    "name_zh": "哭泣",
+    "name_zh": "Crying",
     "tags": "crying, tears, teardrop,",
-    "tags_zh": "哭泣, 眼泪, 泪滴",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["crying", "tears", "sad"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "crying, tears, teardrop,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "crying",
+      "tears",
+      "teardrop"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_06.png"
   },
   {
-    "id": "expression_emotion_0008",
+    "id": "expression_0008",
     "name": "Surprised",
-    "name_zh": "惊讶",
+    "name_zh": "Surprised",
     "tags": "surprised, wide eyes, open mouth,",
-    "tags_zh": "惊讶, 睁大眼, 张嘴",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["surprised", "wide eyes", "open mouth"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "surprised, wide eyes, open mouth,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "surprised",
+      "wide eyes",
+      "open mouth"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_07.png"
   },
   {
-    "id": "expression_emotion_0009",
+    "id": "expression_0009",
     "name": "Scared",
-    "name_zh": "害怕",
+    "name_zh": "Scared",
     "tags": "scared, fear, trembling,",
-    "tags_zh": "害怕, 恐惧, 发抖",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["scared", "fear", "trembling"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "scared, fear, trembling,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "scared",
+      "fear",
+      "trembling"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_08.png"
   },
   {
-    "id": "expression_emotion_0010",
+    "id": "expression_0010",
     "name": "Embarrassed",
-    "name_zh": "害羞尴尬",
+    "name_zh": "Embarrassed",
     "tags": "embarrassed, blush, averting eyes,",
-    "tags_zh": "尴尬, 脸红, 移开视线",
-    "categories": ["基础情绪 (Basic Emotion)"],
-    "traits": ["embarrassed", "blush", "averting eyes"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "embarrassed, blush, averting eyes,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "embarrassed",
+      "blush",
+      "averting eyes"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_09.png"
   },
   {
-    "id": "expression_mouth_0001",
+    "id": "expression_0011",
     "name": "Open Mouth",
-    "name_zh": "张嘴",
+    "name_zh": "Open Mouth",
     "tags": "open mouth, parted lips,",
-    "tags_zh": "张嘴, 嘴唇微张",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["open mouth", "parted lips", "mouth"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "open mouth, parted lips,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "open mouth",
+      "parted lips"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_10.png"
   },
   {
-    "id": "expression_mouth_0002",
+    "id": "expression_0012",
     "name": "Closed Mouth",
-    "name_zh": "闭嘴",
+    "name_zh": "Closed Mouth",
     "tags": "closed mouth, mouth closed,",
-    "tags_zh": "闭嘴, 嘴巴闭合",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["closed mouth", "mouth"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "closed mouth, mouth closed,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "closed mouth",
+      "mouth closed"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_11.png"
   },
   {
-    "id": "expression_mouth_0003",
+    "id": "expression_0013",
     "name": "Pout",
-    "name_zh": "嘟嘴",
+    "name_zh": "Pout",
     "tags": "pout, pouting, puffed cheeks,",
-    "tags_zh": "嘟嘴, 撅嘴, 鼓脸",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["pout", "puffed cheeks", "cute"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "pout, pouting, puffed cheeks,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "pout",
+      "pouting",
+      "puffed cheeks"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_12.png"
   },
   {
-    "id": "expression_mouth_0004",
+    "id": "expression_0014",
     "name": "Tongue Out",
-    "name_zh": "吐舌",
+    "name_zh": "Tongue Out",
     "tags": "tongue out, tongue, playful,",
-    "tags_zh": "吐舌, 舌头, 调皮",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["tongue out", "playful", "mouth"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "tongue out, tongue, playful,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "tongue out",
+      "tongue",
+      "playful"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_13.png"
   },
   {
-    "id": "expression_mouth_0005",
+    "id": "expression_0015",
     "name": "Clenched Teeth",
-    "name_zh": "咬紧牙关",
+    "name_zh": "Clenched Teeth",
     "tags": "clenched teeth, teeth, grimace,",
-    "tags_zh": "咬紧牙关, 牙齿, 痛苦表情",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["clenched teeth", "teeth", "grimace"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "clenched teeth, teeth, grimace,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "clenched teeth",
+      "teeth",
+      "grimace"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_14.png"
   },
   {
-    "id": "expression_mouth_0006",
+    "id": "expression_0016",
     "name": "Wavy Mouth",
-    "name_zh": "波浪嘴",
+    "name_zh": "Wavy Mouth",
     "tags": "wavy mouth, uneasy, embarrassed,",
-    "tags_zh": "波浪嘴, 不安, 尴尬",
-    "categories": ["嘴型 (Mouth)"],
-    "traits": ["wavy mouth", "uneasy", "embarrassed"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "wavy mouth, uneasy, embarrassed,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "wavy mouth",
+      "uneasy",
+      "embarrassed"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_15.png"
   },
   {
-    "id": "expression_eyes_0001",
-    "name": "Closed Eyes",
-    "name_zh": "闭眼",
-    "tags": "closed eyes, eyes closed,",
-    "tags_zh": "闭眼, 眼睛闭合",
-    "categories": ["眼神 (Eyes)"],
-    "traits": ["closed eyes", "calm", "eyes"],
-    "folder": "images",
-    "preview": ""
-  },
-  {
-    "id": "expression_eyes_0002",
-    "name": "Half-Closed Eyes",
-    "name_zh": "半闭眼",
+    "id": "expression_0017",
+    "name": "Half-closed Eyes",
+    "name_zh": "Half-closed Eyes",
     "tags": "half-closed eyes, sleepy, relaxed,",
-    "tags_zh": "半闭眼, 困倦, 放松",
-    "categories": ["眼神 (Eyes)"],
-    "traits": ["half-closed eyes", "sleepy", "relaxed"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "half-closed eyes, sleepy, relaxed,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "half-closed eyes",
+      "sleepy",
+      "relaxed"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_16.png"
   },
   {
-    "id": "expression_eyes_0003",
+    "id": "expression_0018",
     "name": "Wide Eyes",
-    "name_zh": "睁大眼",
+    "name_zh": "Wide Eyes",
     "tags": "wide eyes, surprised, staring,",
-    "tags_zh": "睁大眼, 惊讶, 凝视",
-    "categories": ["眼神 (Eyes)"],
-    "traits": ["wide eyes", "surprised", "staring"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "wide eyes, surprised, staring,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "wide eyes",
+      "surprised",
+      "staring"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_17.png"
   },
   {
-    "id": "expression_eyes_0004",
+    "id": "expression_0019",
     "name": "Sparkling Eyes",
-    "name_zh": "闪亮眼",
+    "name_zh": "Sparkling Eyes",
     "tags": "sparkling eyes, starry eyes, excited,",
-    "tags_zh": "闪亮眼, 星星眼, 兴奋",
-    "categories": ["眼神 (Eyes)"],
-    "traits": ["sparkling eyes", "starry eyes", "excited"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "sparkling eyes, starry eyes, excited,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "sparkling eyes",
+      "starry eyes",
+      "excited"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_18.png"
   },
   {
-    "id": "expression_eyes_0005",
-    "name": "Heart-Shaped Pupils",
-    "name_zh": "爱心眼",
+    "id": "expression_0020",
+    "name": "Heart-shaped Pupils",
+    "name_zh": "Heart-shaped Pupils",
     "tags": "heart-shaped pupils, heart eyes, love,",
-    "tags_zh": "爱心瞳孔, 爱心眼, 喜爱",
-    "categories": ["眼神 (Eyes)"],
-    "traits": ["heart-shaped pupils", "love", "eyes"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "heart-shaped pupils, heart eyes, love,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "heart-shaped pupils",
+      "heart eyes",
+      "love"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_19.png"
   },
   {
-    "id": "expression_face_0001",
+    "id": "expression_0021",
     "name": "Blush",
-    "name_zh": "脸红",
+    "name_zh": "Blush",
     "tags": "blush, embarrassed, red cheeks,",
-    "tags_zh": "脸红, 害羞, 红脸颊",
-    "categories": ["脸部状态 (Face Detail)"],
-    "traits": ["blush", "red cheeks", "embarrassed"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "blush, embarrassed, red cheeks,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "blush",
+      "embarrassed",
+      "red cheeks"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_20.png"
   },
   {
-    "id": "expression_face_0002",
+    "id": "expression_0022",
     "name": "Sweatdrop",
-    "name_zh": "汗滴",
+    "name_zh": "Sweatdrop",
     "tags": "sweatdrop, nervous, embarrassed,",
-    "tags_zh": "汗滴, 紧张, 尴尬",
-    "categories": ["脸部状态 (Face Detail)"],
-    "traits": ["sweatdrop", "nervous", "embarrassed"],
-    "folder": "images",
-    "preview": ""
-  },
-  {
-    "id": "expression_face_0003",
-    "name": "Expressionless",
-    "name_zh": "无表情",
-    "tags": "expressionless, blank stare, emotionless,",
-    "tags_zh": "无表情, 空洞凝视, 冷淡",
-    "categories": ["脸部状态 (Face Detail)"],
-    "traits": ["expressionless", "blank stare", "emotionless"],
-    "folder": "images",
-    "preview": ""
-  },
-  {
-    "id": "expression_face_0004",
-    "name": "Smug",
-    "name_zh": "得意",
-    "tags": "smug, smug face, confident,",
-    "tags_zh": "得意, 得意脸, 自信",
-    "categories": ["脸部状态 (Face Detail)"],
-    "traits": ["smug", "confident", "face"],
-    "folder": "images",
-    "preview": ""
+    "tags_zh": "sweatdrop, nervous, embarrassed,",
+    "categories": [
+      "表情"
+    ],
+    "traits": [
+      "sweatdrop",
+      "nervous",
+      "embarrassed"
+    ],
+    "folder": "wildcards/image/expression",
+    "preview": "/anima-tools/wildcard-image/expression/2026-07-05_21.png"
   }
 ];
 

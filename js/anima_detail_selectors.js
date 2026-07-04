@@ -10,7 +10,7 @@ const DETAIL_SELECTORS = [
     {
         section: "composition",
         widget: "composition_tags",
-        label: "Open Composition Selector",
+        label: "打开构图选择器",
         loading: "Anima composition database is loading, please wait a few seconds...",
         dataKey: "compositionData",
         nodes: ["AnimaCompositionTagSelector", "AnimaCompositionTagSelectorPlus"],
@@ -18,7 +18,7 @@ const DETAIL_SELECTORS = [
     {
         section: "expression",
         widget: "expression_tags",
-        label: "Open Expression Selector",
+        label: "打开表情选择器",
         loading: "Anima expression database is loading, please wait a few seconds...",
         dataKey: "expressionData",
         nodes: ["AnimaExpressionTagSelector", "AnimaExpressionTagSelectorPlus"],
@@ -26,7 +26,7 @@ const DETAIL_SELECTORS = [
     {
         section: "lighting",
         widget: "lighting_tags",
-        label: "Open Lighting Selector",
+        label: "打开光线选择器",
         loading: "Anima lighting database is loading, please wait a few seconds...",
         dataKey: "lightingData",
         nodes: ["AnimaLightingTagSelector", "AnimaLightingTagSelectorPlus"],

@@ -1,24 +1,19 @@
 high angle shot, camera above the character looking down, floor visible behind the character
 low angle shot, camera below waist level looking up, sky or ceiling visible behind the character
 worm's-eye view, camera placed near the floor, extreme low angle looking upward
-bird's-eye view, overhead camera directly above the character, top-down composition
-dutch angle, tilted camera horizon, diagonal composition with slanted background lines
+
+dutch angle, tilted camera horizon
 first-person pov shot, viewer perspective, hands or foreground body parts near the camera
 over-the-shoulder shot, blurred shoulder in foreground, camera behind another person
 strict profile view, side camera angle, character facing left or right
 extreme close-up, eyes and face fill the frame, cropped forehead and chin
 close-up portrait, head and shoulders fill most of the frame, face focus
-upper body shot, waist-up framing, arms and torso visible
-cowboy shot, knees-up framing, medium full figure portrait
-full body shot, head-to-toe character visible, feet fully inside the frame
-wide shot, character small in the environment, large background area visible
-centered composition, character placed exactly in the middle, balanced symmetrical frame
-rule of thirds composition, character placed off-center, empty space on one side
-symmetrical composition, mirrored left-right balance, central vanishing point
-diagonal composition, strong diagonal lines crossing the frame, dynamic slanted layout
-frame within frame, character seen through doorway or window frame, nested composition
-negative space composition, small character with large empty background area
+upper body shot, waist-up framing
+cowboy shot,full figure portrait
+full body shot, whole character visible
+wide shot, character  in the environment, large background area visible
+centered composition, balanced symmetrical frame
+rule of thirds composition, empty space on one side
+diagonal composition, dynamic slanted layout
 shallow depth of field, sharp character with strongly blurred background
-blurry foreground, foreground object out of focus in front of the character
-forced perspective, exaggerated near-far scale difference, foreshortened body parts
-fisheye lens shot, wide-angle distortion, curved background edges
+extreme fisheye lens shot, wide-angle distortion, curved background edges, character deformed

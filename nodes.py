@@ -701,10 +701,10 @@ class AnimaSceneCollector:
         return {
             "required": {
                 "background": ("STRING", {"multiline": True, "default": ""}),
+                "lighting": ("STRING", {"multiline": True, "default": ""}),
                 "composition": ("STRING", {"multiline": True, "default": ""}),
             },
             "optional": {
-                "lighting": ("STRING", {"multiline": True, "default": ""}),
                 "character1": ("CHARACTER_PROMPT",),
             }
         }
@@ -714,7 +714,7 @@ class AnimaSceneCollector:
     FUNCTION = "collect_scene"
     CATEGORY = "AnimaArt/Prompt Builder"
 
-    def collect_scene(self, background, composition, lighting=None, character1=None, **kwargs):
+    def collect_scene(self, background, lighting, composition, character1=None, **kwargs):
         formatted_lines = []
         all_chars = {}
         if character1 and str(character1).strip():
@@ -733,13 +733,13 @@ class AnimaSceneCollector:
         if background_cleaned:
             formatted_lines.append(f"background: {background_cleaned}")
 
-        composition_cleaned = _anima_clean_prompt_tags(composition)
-        if composition_cleaned:
-            formatted_lines.append(f"composition: {composition_cleaned}")
-
         lighting_cleaned = _anima_clean_prompt_tags(lighting)
         if lighting_cleaned:
             formatted_lines.append(f"lighting: {lighting_cleaned}")
+
+        composition_cleaned = _anima_clean_prompt_tags(composition)
+        if composition_cleaned:
+            formatted_lines.append(f"composition: {composition_cleaned}")
 
         return ("\n\n".join(formatted_lines),)
 
@@ -1400,36 +1400,6 @@ class AnimaMultiLoraLoader:
                 
         return (current_model,)
 
-class AnimaBatchWildcardRunner:
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "batch_source": (["all", "expression", "lighting", "composition"], {"default": "all"}),
-                "target_widget": ("STRING", {"default": "auto"}),
-                "start_index": ("INT", {"default": 1, "min": 1, "max": 100000}),
-                "run_count": ("INT", {"default": 0, "min": 0, "max": 100000}),
-                "queue_delay_ms": ("INT", {"default": 500, "min": 0, "max": 60000}),
-                "status": ("STRING", {"multiline": True, "default": "Use the batch controls on this node."}),
-            }
-        }
-
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("status",)
-    FUNCTION = "process"
-    CATEGORY = "AnimaArt"
-
-    def process(self, batch_source, target_widget, start_index, run_count, queue_delay_ms, status):
-        source = str(batch_source or "all")
-        widget = str(target_widget or "auto")
-        text = (
-            f"Anima batch runner ready: source={source}, "
-            f"target_widget={widget}, start_index={int(start_index)}, "
-            f"run_count={int(run_count)}, queue_delay_ms={int(queue_delay_ms)}"
-        )
-        return (text,)
-
-
 NODE_CLASS_MAPPINGS = {
     "AnimaArtistTagSelector": AnimaArtistTagSelector,
     "AnimaArtistTagSelectorPlus": AnimaArtistTagSelectorPlus,
@@ -1452,8 +1422,7 @@ NODE_CLASS_MAPPINGS = {
     "AnimaFinalAssembler": AnimaFinalAssembler,
     "AnimaPromptPlus": AnimaPromptPlus,
     "AnimaPromptComposer": AnimaPromptComposer,
-    "AnimaMultiLoraLoader": AnimaMultiLoraLoader,
-    "AnimaBatchWildcardRunner": AnimaBatchWildcardRunner
+    "AnimaMultiLoraLoader": AnimaMultiLoraLoader
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1478,8 +1447,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaFinalAssembler": "Anima Final Assembler",
     "AnimaPromptPlus": "Anima Prompt Plus",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
-    "AnimaMultiLoraLoader": "Anima Multi LoRA Loader",
-    "AnimaBatchWildcardRunner": "Anima Batch Wildcard Runner"
+    "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
 }
 
 # ----------------- 后端持久化 API 路由 -----------------
@@ -1593,7 +1561,37 @@ def _set_selector_workflow_widget_value(workflow_node, class_type, input_name, v
         widgets_values.append("")
     widgets_values[index] = value
 
+ANIMA_DETAIL_RANDOM_FILES = {
+    "composition": "composition.txt",
+    "expression": "expression.txt",
+    "lighting": "lighting.txt",
+}
+
+def _load_anima_detail_random_lines(section):
+    filename = ANIMA_DETAIL_RANDOM_FILES.get(section)
+    if not filename:
+        return []
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wildcards", "anima_tools", filename)
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+    except Exception as e:
+        print(f"[Anima Tools] Failed to read random {section} tags: {e}")
+        return []
+
 def _selector_random_text(composer, section):
+    if section in ANIMA_DETAIL_RANDOM_FILES:
+        import random
+        lines = _load_anima_detail_random_lines(section)
+        if not lines:
+            return "", []
+        text = random.SystemRandom().choice(lines)
+        if text and not text.rstrip().endswith(","):
+            text = f"{text},"
+        return text, [{"name": text.rstrip(", "), "tags": text}]
+
     selected, text = composer._resolve_prompt_data(
         section == "artist",
         section == "character",
@@ -1794,34 +1792,6 @@ def merge_favorites_data(existing, incoming):
             merged[key] = normalize_favorites_data({key: section})[key]
     return merged
 
-ANIMA_BATCH_WILDCARD_FILES = {
-    "expression": "expression.txt",
-    "lighting": "lighting.txt",
-    "composition": "composition.txt",
-}
-
-def get_anima_batch_wildcards_dir():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "wildcards", "anima_tools")
-
-def load_anima_batch_wildcard_lines():
-    base_dir = get_anima_batch_wildcards_dir()
-    payload = {}
-    for source, filename in ANIMA_BATCH_WILDCARD_FILES.items():
-        path = os.path.join(base_dir, filename)
-        lines = []
-        if os.path.exists(path):
-            with open(path, "r", encoding="utf-8") as f:
-                for raw_line in f:
-                    line = raw_line.strip()
-                    if line and not line.startswith("#"):
-                        lines.append(line)
-        payload[source] = {
-            "filename": filename,
-            "count": len(lines),
-            "lines": lines,
-        }
-    return payload
-
 @PromptServer.instance.routes.get("/anima-tools/favorites")
 async def get_favorites_api(request):
     return web.json_response(load_favorites_data())
@@ -1860,13 +1830,16 @@ async def save_favorites_api(request):
         print(f"[Anima Tools] Error saving favorites: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
-@PromptServer.instance.routes.get("/anima-tools/batch-wildcards")
-async def get_anima_batch_wildcards_api(request):
-    try:
-        return web.json_response({"success": True, "sources": load_anima_batch_wildcard_lines()})
-    except Exception as e:
-        print(f"[Anima Tools] Error reading batch wildcards: {e}")
-        return web.json_response({"success": False, "error": str(e)}, status=500)
+@PromptServer.instance.routes.get("/anima-tools/wildcard-image/{section}/{filename}")
+async def get_anima_wildcard_image_api(request):
+    section = str(request.match_info.get("section", "")).strip().lower()
+    filename = os.path.basename(str(request.match_info.get("filename", "")).strip())
+    if section not in ("composition", "expression", "lighting") or not filename:
+        return web.Response(status=404)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "wildcards", "image", section, filename)
+    if not os.path.isfile(path):
+        return web.Response(status=404)
+    return web.FileResponse(path)
 
 
 MOOSHIE_ARTIST_MANIFEST_URL = "https://cdn.mooshieblob.com/20260425_anima_all_artists/indices/manifest.json"
