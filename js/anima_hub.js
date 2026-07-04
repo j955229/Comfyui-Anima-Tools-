@@ -18,6 +18,7 @@ const SECTIONS = [
 ];
 
 const FAVORITES_STORAGE_KEY = "anima-hub-favorites-fallback";
+const EDITS_STORAGE_KEY = "anima-hub-card-edits";
 
 const HUB_STATE = {
     activeSection: "artist",
@@ -34,6 +35,14 @@ const HUB_STATE = {
     characterDataLoadedQuery: "",
     characterDataLoading: false,
     characterDataRequestId: 0,
+    searchQueries: {
+        artist: "",
+        character: "",
+        clothing: "",
+        background: "",
+        pose: "",
+    },
+    edits: {},
     selected: {
         artist: new Map(),
         character: new Map(),
@@ -199,6 +208,53 @@ function getItemKey(section, item) {
     return String(item?.id || item?.name || item?.tags || "");
 }
 
+function loadHubEdits() {
+    try {
+        const data = JSON.parse(localStorage.getItem(EDITS_STORAGE_KEY) || "{}");
+        HUB_STATE.edits = data && typeof data === "object" ? data : {};
+    } catch (error) {
+        console.warn("[Anima Tools] Failed to load Hub edits", error);
+        HUB_STATE.edits = {};
+    }
+}
+
+function saveHubEdits() {
+    localStorage.setItem(EDITS_STORAGE_KEY, JSON.stringify(HUB_STATE.edits || {}));
+}
+
+function getEditKey(section, item) {
+    return `${section}:${getItemKey(section, item)}`;
+}
+
+function getItemEdit(section, item) {
+    return HUB_STATE.edits?.[getEditKey(section, item)] || {};
+}
+
+function setItemEdit(section, item, patch) {
+    const key = getEditKey(section, item);
+    const current = HUB_STATE.edits[key] || {};
+    const next = { ...current, ...patch };
+    Object.keys(next).forEach(prop => {
+        if (next[prop] === undefined || next[prop] === null || next[prop] === "") delete next[prop];
+    });
+    if (Object.keys(next).length) {
+        HUB_STATE.edits[key] = next;
+    } else {
+        delete HUB_STATE.edits[key];
+    }
+    saveHubEdits();
+}
+
+function getEditedTrigger(section, item, fallback) {
+    const edit = getItemEdit(section, item);
+    return edit.trigger ?? fallback ?? "";
+}
+
+function getEditedTags(section, item, fallback) {
+    const edit = getItemEdit(section, item);
+    return edit.tags ?? fallback ?? "";
+}
+
 function getItemTitle(section, item) {
     if (section === "artist") return item?.prompt || `@${item?.name || ""}`;
     if (section === "character") return titleCase(item?.name || "");
@@ -258,20 +314,25 @@ function getDanbooruUrl(section, item) {
 }
 
 async function getPromptForItem(section, item, characterMode = item?._hubCharacterMode || "trigger") {
-    if (section === "artist") return item?.prompt || `@${item?.name || ""}`;
+    if (section === "artist") return getEditedTrigger(section, item, item?.prompt || `@${item?.name || ""}`);
     if (section === "character") {
         if (item?.isCustom) return item.customContent || item.name || "";
         const officialData = await getOfficialCharacterData(item);
-        const trigger = item?.trigger || officialData?.trigger || [item?.name, item?.copyright].filter(Boolean).join(", ");
+        const trigger = getEditedTrigger(section, item, item?.trigger || officialData?.trigger || [item?.name, item?.copyright].filter(Boolean).join(", "));
         if (characterMode !== "trigger_tags") return trigger;
 
         const result = [];
         const seen = new Set();
         pushUniquePromptTokens(result, seen, trigger);
-        pushUniquePromptTokens(result, seen, item?.tags);
-        pushUniquePromptTokens(result, seen, officialData?.tags);
-        pushUniquePromptTokens(result, seen, officialData?.core_tags);
-        pushUniquePromptTokens(result, seen, officialData?.coreTags);
+        const editedTags = getItemEdit(section, item).tags;
+        if (editedTags !== undefined) {
+            pushUniquePromptTokens(result, seen, editedTags);
+        } else {
+            pushUniquePromptTokens(result, seen, item?.tags);
+            pushUniquePromptTokens(result, seen, officialData?.tags);
+            pushUniquePromptTokens(result, seen, officialData?.core_tags);
+            pushUniquePromptTokens(result, seen, officialData?.coreTags);
+        }
         if (result.length === 1) {
             pushUniquePromptTokens(result, seen, item?.gender);
             if (item?.hair) pushUniquePromptTokens(result, seen, `${item.hair} hair`);
@@ -279,7 +340,7 @@ async function getPromptForItem(section, item, characterMode = item?._hubCharact
         }
         return result.join(", ");
     }
-    return splitPromptTokens(item?.tags).join(", ");
+    return splitPromptTokens(getEditedTags(section, item, item?.tags)).join(", ");
 }
 
 async function formatSelectedPrompt(section) {
@@ -341,6 +402,7 @@ function applyCharacterSearch(root, query) {
     HUB_STATE.activeSection = "character";
     HUB_STATE.viewMode = "all";
     HUB_STATE.taxonomy.character = "all";
+    HUB_STATE.searchQueries.character = value;
     HUB_STATE.characterData = [];
     HUB_STATE.characterDataLoadedQuery = "";
     const search = root?.querySelector(".anima-hub-search");
@@ -422,6 +484,8 @@ function openImagePreview(imageUrl, title = "") {
 }
 
 async function getDisplayTags(section, item) {
+    const editedTags = getItemEdit(section, item).tags;
+    if (editedTags !== undefined) return splitPromptTokens(editedTags);
     if (section === "artist") return splitPromptTokens(item?.name);
     if (section === "character") {
         const officialData = await getOfficialCharacterData(item);
@@ -719,8 +783,8 @@ function installHubStyles() {
         }
         .anima-hub-card {
             position: relative;
-            height: clamp(500px, 38vw, 700px);
-            min-height: 500px;
+            height: clamp(375px, 28.5vw, 525px);
+            min-height: 375px;
             border-radius: 8px;
             border: 1px solid rgba(255,255,255,0.09);
             background: rgba(255,255,255,0.035);
@@ -732,14 +796,33 @@ function installHubStyles() {
             overflow: hidden;
         }
         .anima-hub-card.selected {
-            border-color: rgba(56,189,248,0.64);
-            background: rgba(56,189,248,0.13);
+            border-color: rgba(56,189,248,0.9);
+            box-shadow:
+                0 0 0 2px rgba(56,189,248,0.72),
+                0 0 0 5px rgba(14,165,233,0.18),
+                0 18px 42px rgba(14,165,233,0.2);
+            background: rgba(56,189,248,0.1);
+        }
+        .anima-hub-card.selected::after {
+            content: "Selected";
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            z-index: 5;
+            padding: 5px 8px;
+            border-radius: 999px;
+            background: rgba(14,165,233,0.92);
+            color: #ffffff;
+            font-size: 11px;
+            font-weight: 850;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.38);
+            pointer-events: none;
         }
         .anima-hub-thumb {
             position: relative;
             width: 100%;
             height: 100%;
-            min-height: 500px;
+            min-height: 375px;
             border-radius: 0;
             overflow: hidden;
             background: #202329;
@@ -750,14 +833,32 @@ function installHubStyles() {
             color: #71717a;
             font-size: 12px;
         }
+        .anima-hub-thumb-bg {
+            position: absolute;
+            inset: -14px;
+            z-index: 0;
+            background-position: center;
+            background-size: cover;
+            filter: blur(18px) saturate(1.08);
+            opacity: 0.58;
+            transform: scale(1.04);
+        }
+        .anima-hub-thumb-bg::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: rgba(8,10,15,0.18);
+        }
         .anima-hub-thumb img {
+            position: relative;
+            z-index: 1;
             width: 100%;
             height: 100%;
-            min-height: 500px;
-            object-fit: cover;
-            object-position: center top;
+            min-height: 375px;
+            object-fit: contain;
+            object-position: center;
             display: block;
-            background: #2b2d31;
+            background: transparent;
         }
         .anima-hub-overlay-panel {
             position: absolute;
@@ -811,6 +912,30 @@ function installHubStyles() {
             text-transform: uppercase;
             color: #ffffff;
             margin-bottom: 5px;
+        }
+        .anima-hub-overlay-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 5px;
+        }
+        .anima-hub-overlay-label-row .anima-hub-overlay-label {
+            margin-bottom: 0;
+        }
+        .anima-hub-edit-mini {
+            border: 1px solid rgba(255,255,255,0.18);
+            background: rgba(255,255,255,0.08);
+            color: #f4f4f5;
+            border-radius: 999px;
+            padding: 2px 7px;
+            cursor: pointer;
+            font-size: 10px;
+            font-weight: 800;
+        }
+        .anima-hub-edit-mini:hover {
+            background: rgba(14,165,233,0.34);
+            border-color: rgba(56,189,248,0.58);
         }
         .anima-hub-overlay-trigger {
             font-size: 12px;
@@ -1169,6 +1294,25 @@ function createOverlayButton(label, onClick, primary = false) {
     return button;
 }
 
+function createEditButton(label, onClick) {
+    const button = createEl("button", "anima-hub-edit-mini", label);
+    button.type = "button";
+    button.onclick = event => {
+        event.stopPropagation();
+        onClick();
+    };
+    return button;
+}
+
+function editCardField(root, section, item, field, currentValue) {
+    const label = field === "trigger" ? "Trigger" : "Tags";
+    const next = window.prompt(`Edit ${label}`, currentValue || "");
+    if (next === null) return;
+    setItemEdit(section, item, { [field]: next.trim() });
+    renderHub(root);
+    showToast(`${label} updated`);
+}
+
 function fillOverlayTags(tagContainer, tags, onTagClick = null) {
     tagContainer.innerHTML = "";
     const limited = tags.slice(0, 18);
@@ -1236,16 +1380,27 @@ function createCardOverlay(root, section, item, imageUrl) {
     overlay.appendChild(top);
 
     const scroll = createEl("div", "anima-hub-overlay-scroll");
-    scroll.appendChild(createEl("div", "anima-hub-overlay-label", "Trigger"));
+    const triggerRow = createEl("div", "anima-hub-overlay-label-row");
+    triggerRow.appendChild(createEl("div", "anima-hub-overlay-label", "Trigger"));
     const trigger = createEl("div", "anima-hub-overlay-trigger", section === "artist" ? `@${item?.name || ""}` : getItemTitle(section, item));
+    triggerRow.appendChild(createEditButton("Edit", async () => {
+        editCardField(root, section, item, "trigger", await getPromptForItem(section, item, "trigger"));
+    }));
+    scroll.appendChild(triggerRow);
     getPromptForItem(section, item, "trigger").then(prompt => {
         if (prompt) trigger.textContent = prompt;
     });
     scroll.appendChild(trigger);
-    scroll.appendChild(createEl("div", "anima-hub-overlay-label", "Tags"));
+    const tagsRow = createEl("div", "anima-hub-overlay-label-row");
+    tagsRow.appendChild(createEl("div", "anima-hub-overlay-label", "Tags"));
+    tagsRow.appendChild(createEditButton("Edit", async () => {
+        const tags = await getDisplayTags(section, item);
+        editCardField(root, section, item, "tags", tags.join(", "));
+    }));
+    scroll.appendChild(tagsRow);
     const tagList = createEl("div", "anima-hub-tag-list");
     const onTagClick = section === "character" ? tag => applyCharacterSearch(root, tag) : null;
-    fillOverlayTags(tagList, splitPromptTokens(item?.tags || item?.name || ""), onTagClick);
+    fillOverlayTags(tagList, splitPromptTokens(getEditedTags(section, item, item?.tags || item?.name || "")), onTagClick);
     getDisplayTags(section, item).then(tags => fillOverlayTags(tagList, tags, onTagClick));
     scroll.appendChild(tagList);
 
@@ -1264,11 +1419,19 @@ function createCardOverlay(root, section, item, imageUrl) {
     if (section === "character") {
         const selectRow = createEl("div", "anima-hub-overlay-row");
         selectRow.appendChild(createOverlayButton("Trigger", () => {
-            HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger"));
+            if (selectedMode === "trigger") {
+                HUB_STATE.selected[section].delete(key);
+            } else {
+                HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger"));
+            }
             renderHub(root);
         }, selectedMode === "trigger"));
         selectRow.appendChild(createOverlayButton("Trigger + tags", () => {
-            HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger_tags"));
+            if (selectedMode === "trigger_tags") {
+                HUB_STATE.selected[section].delete(key);
+            } else {
+                HUB_STATE.selected[section].set(key, getSelectedItem(section, item, "trigger_tags"));
+            }
             renderHub(root);
         }, selectedMode === "trigger_tags"));
         actions.appendChild(selectRow);
@@ -1308,7 +1471,11 @@ function createCardOverlay(root, section, item, imageUrl) {
 function renderHub(root) {
     const section = HUB_STATE.activeSection;
     const sectionDef = SECTIONS.find(item => item.id === section) || SECTIONS[0];
-    const query = root.querySelector(".anima-hub-search")?.value?.trim?.().toLowerCase() || "";
+    const searchInput = root.querySelector(".anima-hub-search");
+    if (searchInput && document.activeElement !== searchInput) {
+        searchInput.value = HUB_STATE.searchQueries[section] || "";
+    }
+    const query = searchInput?.value?.trim?.().toLowerCase() || "";
     const targets = resolveAnimaTargets(section, HUB_STATE.preferredNode);
     const targetSelect = root.querySelector(".anima-hub-target");
     const sourceSelect = root.querySelector(".anima-hub-artist-source");
@@ -1393,6 +1560,9 @@ function renderHub(root) {
             const imageUrl = getItemImageUrl(section, item);
             if (imageUrl) {
                 thumb.textContent = "";
+                const bg = createEl("div", "anima-hub-thumb-bg");
+                bg.style.backgroundImage = `url("${imageUrl.replaceAll('"', "%22")}")`;
+                thumb.appendChild(bg);
                 const img = document.createElement("img");
                 img.loading = "lazy";
                 img.src = imageUrl;
@@ -1400,6 +1570,7 @@ function renderHub(root) {
                 img.onclick = () => openImagePreview(imageUrl, getItemTitle(section, item));
                 img.onerror = () => {
                     img.remove();
+                    bg.remove();
                     thumb.textContent = "No image";
                 };
                 thumb.appendChild(img);
@@ -1423,7 +1594,7 @@ function renderHub(root) {
 function switchSection(root, section) {
     HUB_STATE.activeSection = section;
     const search = root.querySelector(".anima-hub-search");
-    if (search) search.value = "";
+    if (search) search.value = HUB_STATE.searchQueries[section] || "";
     renderHub(root);
 }
 
@@ -1454,6 +1625,7 @@ async function applyCurrentSelection(root) {
 
 function createHub(section, preferredNode) {
     installHubStyles();
+    loadHubEdits();
     closeHub();
 
     HUB_STATE.activeSection = SECTIONS.some(item => item.id === section) ? section : "artist";
@@ -1487,7 +1659,11 @@ function createHub(section, preferredNode) {
     const search = createEl("input", "anima-hub-search");
     search.type = "search";
     search.placeholder = "Search";
-    search.oninput = () => renderHub(root);
+    search.value = HUB_STATE.searchQueries[HUB_STATE.activeSection] || "";
+    search.oninput = () => {
+        HUB_STATE.searchQueries[HUB_STATE.activeSection] = search.value;
+        renderHub(root);
+    };
 
     const sourceSelect = createEl("select", "anima-hub-artist-source");
     sourceSelect.onchange = () => {
