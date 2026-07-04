@@ -80,6 +80,7 @@ js/anima_character_sources.js    Animadex 人物來源
 js/anima_taxonomy.js             分類與子分類規則
 js/anima_target_resolver.js      Hub 套用目標解析
 js/*_data.js                     服裝、背景、姿勢、構圖、表情、光線等本地資料
+wildcards/anima_tools/*.txt      Impact Pack WildcardProcessor 用的半自動 prompt 檔案
 ```
 
 ## 資料來源與致謝

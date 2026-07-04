@@ -1,0 +1,24 @@
+backlighting, backlight, silhouette
+rim lighting, rim light, edge light
+side lighting, sidelighting, side light
+underlighting, underlight, lit from below
+overhead lighting, top light, hard shadows
+soft lighting, soft light, gentle shadows
+hard lighting, hard light, sharp shadows
+dramatic lighting, high contrast, deep shadows
+cinematic lighting, film lighting, dramatic shadows
+chiaroscuro, tenebrism, high contrast
+volumetric lighting, light rays, atmosphere
+god rays, crepuscular rays, light rays
+lens flare, light leak, bloom
+bloom, glow, glowing
+bokeh, blurry background, depth of field
+golden hour, sunset, warm lighting
+blue hour, dusk, cool lighting
+moonlight, night, cool lighting
+sunlight, sunshine, natural lighting
+dappled sunlight, tree shadow, sunlight
+neon lighting, neon lights, cyberpunk
+colored lighting, colorful lighting, colored light
+warm lighting, warm light, orange lighting
+cool lighting, blue lighting, cold light

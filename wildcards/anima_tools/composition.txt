@@ -1,0 +1,24 @@
+high angle, from above, looking down
+low angle, from below, looking up
+worm's-eye view, extreme low angle, from below
+bird's-eye view, overhead view, from above
+dutch angle, tilted angle, diagonal composition
+pov, point of view, first-person view
+over shoulder, over-the-shoulder shot, from behind
+profile, side view, looking to the side
+extreme close-up, close-up, face focus
+close-up, portrait, face focus
+upper body, portrait, medium close-up
+cowboy shot, knees up, medium shot
+full body, standing, full-length portrait
+wide shot, long shot, scenery focus
+centered composition, centered, symmetrical composition
+rule of thirds, off-center, balanced composition
+symmetrical composition, symmetry, centered
+diagonal composition, dynamic angle, dutch angle
+frame within frame, doorway, window frame
+negative space, minimalism, simple background
+depth of field, blurry background, focus blur
+blurry foreground, foreground blur, depth of field
+forced perspective, perspective, foreshortening
+fisheye, fisheye lens, wide-angle lens
