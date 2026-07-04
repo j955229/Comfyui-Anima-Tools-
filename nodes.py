@@ -1276,6 +1276,35 @@ class AnimaMultiLoraLoader:
                 
         return (current_model,)
 
+class AnimaBatchWildcardRunner:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "batch_source": (["all", "expression", "lighting", "composition"], {"default": "all"}),
+                "target_widget": ("STRING", {"default": "auto"}),
+                "start_index": ("INT", {"default": 1, "min": 1, "max": 100000}),
+                "run_count": ("INT", {"default": 0, "min": 0, "max": 100000}),
+                "queue_delay_ms": ("INT", {"default": 500, "min": 0, "max": 60000}),
+                "status": ("STRING", {"multiline": True, "default": "Use the batch controls on this node."}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "process"
+    CATEGORY = "AnimaArt"
+
+    def process(self, batch_source, target_widget, start_index, run_count, queue_delay_ms, status):
+        source = str(batch_source or "all")
+        widget = str(target_widget or "auto")
+        text = (
+            f"Anima batch runner ready: source={source}, "
+            f"target_widget={widget}, start_index={int(start_index)}, "
+            f"run_count={int(run_count)}, queue_delay_ms={int(queue_delay_ms)}"
+        )
+        return (text,)
+
 
 NODE_CLASS_MAPPINGS = {
     "AnimaArtistTagSelector": AnimaArtistTagSelector,
@@ -1296,7 +1325,8 @@ NODE_CLASS_MAPPINGS = {
     "AnimaLightingTagSelectorPlus": AnimaLightingTagSelectorPlus,
     "AnimaPromptPlus": AnimaPromptPlus,
     "AnimaPromptComposer": AnimaPromptComposer,
-    "AnimaMultiLoraLoader": AnimaMultiLoraLoader
+    "AnimaMultiLoraLoader": AnimaMultiLoraLoader,
+    "AnimaBatchWildcardRunner": AnimaBatchWildcardRunner
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -1318,7 +1348,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaLightingTagSelectorPlus": "Anima Lighting Tag Selector+",
     "AnimaPromptPlus": "Anima Prompt Plus",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
-    "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
+    "AnimaMultiLoraLoader": "Anima Multi LoRA Loader",
+    "AnimaBatchWildcardRunner": "Anima Batch Wildcard Runner"
 }
 
 # ----------------- 后端持久化 API 路由 -----------------
@@ -1633,6 +1664,34 @@ def merge_favorites_data(existing, incoming):
             merged[key] = normalize_favorites_data({key: section})[key]
     return merged
 
+ANIMA_BATCH_WILDCARD_FILES = {
+    "expression": "expression.txt",
+    "lighting": "lighting.txt",
+    "composition": "composition.txt",
+}
+
+def get_anima_batch_wildcards_dir():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "wildcards", "anima_tools")
+
+def load_anima_batch_wildcard_lines():
+    base_dir = get_anima_batch_wildcards_dir()
+    payload = {}
+    for source, filename in ANIMA_BATCH_WILDCARD_FILES.items():
+        path = os.path.join(base_dir, filename)
+        lines = []
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                for raw_line in f:
+                    line = raw_line.strip()
+                    if line and not line.startswith("#"):
+                        lines.append(line)
+        payload[source] = {
+            "filename": filename,
+            "count": len(lines),
+            "lines": lines,
+        }
+    return payload
+
 @PromptServer.instance.routes.get("/anima-tools/favorites")
 async def get_favorites_api(request):
     return web.json_response(load_favorites_data())
@@ -1669,6 +1728,14 @@ async def save_favorites_api(request):
         return web.json_response({"success": True, "path": path})
     except Exception as e:
         print(f"[Anima Tools] Error saving favorites: {e}")
+        return web.json_response({"success": False, "error": str(e)}, status=500)
+
+@PromptServer.instance.routes.get("/anima-tools/batch-wildcards")
+async def get_anima_batch_wildcards_api(request):
+    try:
+        return web.json_response({"success": True, "sources": load_anima_batch_wildcard_lines()})
+    except Exception as e:
+        print(f"[Anima Tools] Error reading batch wildcards: {e}")
         return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
