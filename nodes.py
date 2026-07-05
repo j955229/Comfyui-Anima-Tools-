@@ -748,14 +748,15 @@ class AnimaFinalAssembler:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "tags": ("STRING", {"multiline": True, "default": "masterpiece, very aesthetic, absurdres, best quality, year 2025, newest, safe, 1girl, solo"}),
-                "lora_trigger": ("STRING", {"multiline": True, "default": ""}),
-                "artist": ("STRING", {"multiline": True, "default": ""}),
-                "char_bg_comp_string": ("STRING", {"multiline": True, "default": ""}),
                 "natural_language": ("STRING", {"multiline": True, "default": ""}),
             },
             "optional": {
+                "prompt_base": ("STRING", {"forceInput": True}),
                 "prompt_parts": ("STRING", {"forceInput": True}),
+                "tags": ("STRING", {"forceInput": True}),
+                "lora_trigger": ("STRING", {"forceInput": True}),
+                "artist": ("STRING", {"forceInput": True}),
+                "char_bg_comp_string": ("STRING", {"forceInput": True}),
             },
         }
 
@@ -773,25 +774,56 @@ class AnimaFinalAssembler:
         except Exception:
             return {}
 
-    def assemble_final(self, tags, lora_trigger, artist, char_bg_comp_string, natural_language, prompt_parts=None):
-        parts = self._parse_prompt_parts(prompt_parts)
+    def _base_from_fields(self, tags="", lora_trigger="", artist="", char_bg_comp_string=""):
         formatted_lines = []
-        tags_cleaned = _anima_clean_prompt_tags(parts.get("tags", tags))
+        tags_cleaned = _anima_clean_prompt_tags(tags)
         if tags_cleaned:
             formatted_lines.append(f"tags: {tags_cleaned}")
 
-        lora_cleaned = _anima_clean_prompt_tags(parts.get("lora_trigger", lora_trigger))
+        lora_cleaned = _anima_clean_prompt_tags(lora_trigger)
         if lora_cleaned:
             formatted_lines.append(lora_cleaned)
 
-        artist_cleaned = _anima_clean_prompt_tags(parts.get("artist", artist))
+        artist_cleaned = _anima_clean_prompt_tags(artist)
         if artist_cleaned:
             formatted_lines.append(artist_cleaned)
 
-        context = parts.get("llm_context", char_bg_comp_string)
-        if context and str(context).strip():
-            formatted_lines.append(str(context).strip())
+        context_cleaned = str(char_bg_comp_string or "").strip()
+        if context_cleaned:
+            formatted_lines.append(context_cleaned)
 
+        return "\n\n".join(formatted_lines)
+
+    def _base_from_prompt_parts(self, prompt_parts):
+        parts = self._parse_prompt_parts(prompt_parts)
+        if not parts:
+            return ""
+        return self._base_from_fields(
+            parts.get("tags", ""),
+            parts.get("lora_trigger", ""),
+            parts.get("artist", ""),
+            parts.get("llm_context", ""),
+        )
+
+    def assemble_final(
+        self,
+        natural_language,
+        prompt_base=None,
+        prompt_parts=None,
+        tags="",
+        lora_trigger="",
+        artist="",
+        char_bg_comp_string="",
+    ):
+        base_prompt = str(prompt_base or "").strip()
+        if not base_prompt:
+            base_prompt = self._base_from_prompt_parts(prompt_parts)
+        if not base_prompt:
+            base_prompt = self._base_from_fields(tags, lora_trigger, artist, char_bg_comp_string)
+
+        formatted_lines = []
+        if base_prompt:
+            formatted_lines.append(base_prompt)
         if natural_language and str(natural_language).strip():
             formatted_lines.append(str(natural_language).strip())
 
@@ -821,7 +853,7 @@ class AnimaPromptWorkspace:
         return {"required": required}
 
     RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("llm_context", "prompt_parts")
+    RETURN_NAMES = ("llm_context", "prompt_base")
     FUNCTION = "build_workspace"
     CATEGORY = "AnimaArt/Prompt Builder"
 
@@ -841,7 +873,6 @@ class AnimaPromptWorkspace:
 
     def build_workspace(self, tags, lora_trigger, artist, character_count, active_character, background, lighting, composition, **kwargs):
         llm_lines = []
-        characters = []
         count = self._slot_count(character_count)
 
         for index in range(1, count + 1):
@@ -849,11 +880,6 @@ class AnimaPromptWorkspace:
             line = self._character_line(values)
             if line:
                 llm_lines.append(f"character{index}: {line}")
-                characters.append({
-                    "index": index,
-                    **{field: _anima_clean_prompt_tags(values.get(field, "")) for field in self.CHARACTER_FIELDS},
-                    "line": line,
-                })
 
         background_cleaned = _anima_clean_prompt_tags(background)
         if background_cleaned:
@@ -868,17 +894,24 @@ class AnimaPromptWorkspace:
             llm_lines.append(f"composition: {composition_cleaned}")
 
         llm_context = "\n\n".join(llm_lines)
-        prompt_parts = json.dumps({
-            "tags": _anima_clean_prompt_tags(tags),
-            "lora_trigger": _anima_clean_prompt_tags(lora_trigger),
-            "artist": _anima_clean_prompt_tags(artist),
-            "characters": characters,
-            "background": background_cleaned,
-            "lighting": lighting_cleaned,
-            "composition": composition_cleaned,
-            "llm_context": llm_context,
-        }, ensure_ascii=False)
-        return (llm_context, prompt_parts)
+        prompt_lines = []
+
+        tags_cleaned = _anima_clean_prompt_tags(tags)
+        if tags_cleaned:
+            prompt_lines.append(f"tags: {tags_cleaned}")
+
+        lora_cleaned = _anima_clean_prompt_tags(lora_trigger)
+        if lora_cleaned:
+            prompt_lines.append(lora_cleaned)
+
+        artist_cleaned = _anima_clean_prompt_tags(artist)
+        if artist_cleaned:
+            prompt_lines.append(artist_cleaned)
+
+        if llm_context:
+            prompt_lines.append(llm_context)
+
+        return (llm_context, "\n\n".join(prompt_lines))
 
 class AnimaPromptPlus:
     @classmethod
@@ -1540,11 +1573,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaExpressionTagSelectorPlus": "Anima Expression Tag Selector+",
     "AnimaLightingTagSelector": "Anima Lighting Tag Selector",
     "AnimaLightingTagSelectorPlus": "Anima Lighting Tag Selector+",
-    "AnimaCharacterSpec": "Anima Character Spec",
-    "AnimaSceneCollector": "Anima Scene Collector",
-    "AnimaFinalAssembler": "Anima Final Assembler",
+    "AnimaCharacterSpec": "Anima Character Spec (Legacy)",
+    "AnimaSceneCollector": "Anima Scene Collector (Legacy)",
+    "AnimaFinalAssembler": "Anima Final Assembler (Optional Merge)",
     "AnimaPromptWorkspace": "Anima Prompt Workspace",
-    "AnimaPromptPlus": "Anima Prompt Plus",
+    "AnimaPromptPlus": "Anima Prompt Plus (Legacy)",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
     "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
 }

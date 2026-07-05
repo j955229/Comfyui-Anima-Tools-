@@ -4,8 +4,6 @@ import { SELECTOR_RANDOM_PROPERTY } from "./anima_selector_random.js";
 import { openAnimaHub } from "./anima_hub.js";
 
 const CHARACTER_SLOTS = 4;
-const CHARACTER_FIELDS = ["name", "appearance", "clothes", "expression", "pose"];
-const VISIBLE_WIDGETS = new Set(["tags", "lora_trigger", "artist", "character_count", "active_character"]);
 const RANDOM_FIELDS = [
     ["artist", "画师"],
     ["character", "角色名"],
@@ -39,10 +37,10 @@ app.registerExtension({
 
 function setupWorkspaceNode(node) {
     if (!node) return;
-    hideInternalWidgets(node);
     ensureWorkspacePanel(node);
+    movePanelAfterActiveCharacter(node);
     node.__animaWorkspaceRefresh = () => {
-        hideInternalWidgets(node);
+        movePanelAfterActiveCharacter(node);
         updateWorkspacePanel(node);
         refreshNode(node);
     };
@@ -69,45 +67,6 @@ function setRandomEnabled(node, section, enabled) {
     refreshNode(node);
 }
 
-function getHiddenWidgetNames() {
-    const names = [];
-    for (let index = 1; index <= CHARACTER_SLOTS; index += 1) {
-        CHARACTER_FIELDS.forEach(field => names.push(`character${index}_${field}`));
-    }
-    names.push("background", "lighting", "composition");
-    return names;
-}
-
-function hideInternalWidgets(node) {
-    for (const widget of node.widgets || []) {
-        if (!widget?.name || VISIBLE_WIDGETS.has(widget.name)) continue;
-        if (!getHiddenWidgetNames().includes(widget.name)) continue;
-        widget.type = "hidden";
-        widget.hidden = true;
-        widget.options = { ...(widget.options || {}), hidden: true };
-        widget.serialize = true;
-        widget.disabled = true;
-        widget.draw = () => {};
-        widget.computeSize = () => [0, 0];
-        widget.computedHeight = 0;
-        widget.y = -100000;
-        widget.last_y = -100000;
-        hideWidgetDom(widget);
-    }
-}
-
-function hideWidgetDom(widget) {
-    [widget?.element, widget?.inputEl, widget?.el, widget?.container].forEach(el => {
-        if (!el?.style) return;
-        el.style.setProperty("display", "none", "important");
-        el.style.setProperty("visibility", "hidden", "important");
-        el.style.setProperty("height", "0px", "important");
-        el.style.setProperty("width", "0px", "important");
-        el.style.setProperty("position", "absolute", "important");
-        el.style.setProperty("left", "-100000px", "important");
-    });
-}
-
 function ensureWorkspacePanel(node) {
     if (node._animaWorkspacePanelWidget || typeof node.addDOMWidget !== "function") return;
     const panel = document.createElement("div");
@@ -128,10 +87,22 @@ function ensureWorkspacePanel(node) {
         setValue: () => {},
     });
     widget.serialize = false;
-    widget.computeSize = (width) => [width, 220];
-    widget.computedHeight = 220;
+    widget.computeSize = (width) => [width, 164];
+    widget.computedHeight = 164;
     node._animaWorkspacePanelWidget = widget;
     node._animaWorkspacePanelEl = panel;
+    movePanelAfterActiveCharacter(node);
+}
+
+function movePanelAfterActiveCharacter(node) {
+    const widget = node?._animaWorkspacePanelWidget;
+    if (!widget || !Array.isArray(node.widgets)) return;
+    const currentIndex = node.widgets.indexOf(widget);
+    const activeIndex = node.widgets.findIndex(item => item?.name === "active_character");
+    if (currentIndex < 0 || activeIndex < 0 || currentIndex === activeIndex + 1) return;
+    node.widgets.splice(currentIndex, 1);
+    const nextActiveIndex = node.widgets.findIndex(item => item?.name === "active_character");
+    node.widgets.splice(nextActiveIndex + 1, 0, widget);
 }
 
 function widgetText(node, name) {
@@ -146,13 +117,6 @@ function activeCharacter(node) {
 function characterCount(node) {
     const value = Number(widgetText(node, "character_count") || 1);
     return Number.isFinite(value) ? Math.min(Math.max(Math.round(value), 1), CHARACTER_SLOTS) : 1;
-}
-
-function characterLine(node, index) {
-    return CHARACTER_FIELDS
-        .map(field => widgetText(node, `character${index}_${field}`))
-        .filter(Boolean)
-        .join(", ");
 }
 
 function createButton(label, onClick, primary = false) {
@@ -197,40 +161,22 @@ function updateWorkspacePanel(node) {
     panel.innerHTML = "";
 
     const top = document.createElement("div");
-    top.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:8px;";
+    top.style.cssText = "display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:7px;";
     top.appendChild(createButton("打开 Anima Prompt Hub", () => openAnimaHub("character", node), true));
 
     const meta = document.createElement("div");
-    meta.textContent = `当前角色 ${activeCharacter(node)} / 角色数量 ${characterCount(node)}`;
-    meta.style.cssText = "color:#a1a1aa;font-weight:750;white-space:nowrap;";
+    meta.textContent = `Hub写入角色: 第${activeCharacter(node)}格 / 输出角色: ${characterCount(node)}个`;
+    meta.style.cssText = "color:#cbd5e1;font-weight:750;white-space:nowrap;";
     top.appendChild(meta);
     panel.appendChild(top);
 
+    const note = document.createElement("div");
+    note.textContent = "下方字段可手动微调；LLM 只读取角色、背景、光线、构图。";
+    note.style.cssText = "color:#94a3b8;margin-bottom:7px;";
+    panel.appendChild(note);
+
     const randomGrid = document.createElement("div");
-    randomGrid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-bottom:8px;";
+    randomGrid.style.cssText = "display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;";
     RANDOM_FIELDS.forEach(([section, label]) => randomGrid.appendChild(createRandomToggle(node, section, label)));
     panel.appendChild(randomGrid);
-
-    const summary = document.createElement("div");
-    summary.style.cssText = `
-        border: 1px solid rgba(255,255,255,0.09);
-        background: rgba(255,255,255,0.04);
-        border-radius: 8px;
-        padding: 7px 8px;
-        color: #d4d4d8;
-        max-height: 86px;
-        overflow: auto;
-        white-space: pre-wrap;
-    `;
-    const lines = [];
-    for (let index = 1; index <= characterCount(node); index += 1) {
-        const line = characterLine(node, index);
-        if (line) lines.push(`character${index}: ${line}`);
-    }
-    ["background", "lighting", "composition"].forEach(name => {
-        const text = widgetText(node, name);
-        if (text) lines.push(`${name}: ${text}`);
-    });
-    summary.textContent = lines.length ? lines.join("\n") : "尚未选择角色或场景内容";
-    panel.appendChild(summary);
 }
