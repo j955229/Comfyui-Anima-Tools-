@@ -60,7 +60,7 @@ function extractSelectorTagsPayload(message) {
     return null;
 }
 
-function syncSelectorTagsFromExecution(node, message) {
+export function syncSelectorTagsFromExecution(node, message) {
     const payload = extractSelectorTagsPayload(message);
     if (!payload) return;
     for (const [name, value] of Object.entries(payload)) {

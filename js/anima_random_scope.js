@@ -71,7 +71,27 @@ async function loadCustomHubData() {
     }
 }
 
+async function loadFavoritesData() {
+    try {
+        const response = await fetch("/anima-tools/favorites");
+        return response.ok ? await response.json() : null;
+    } catch {
+        return null;
+    }
+}
+
 async function getScopeGroups(section) {
+    const [customData, favoritesData] = await Promise.all([loadCustomHubData(), loadFavoritesData()]);
+    const specialChildren = [{ id: "__favorites", label: "我的最愛", groupLabel: "特殊范围", isSpecial: true }];
+    const comboCards = customData?.cards?.custom_combo;
+    const hasComboForSection = Array.isArray(comboCards)
+        && comboCards.some(card => card?.sectionPrompts && typeof card.sectionPrompts === "object" && card.sectionPrompts[section]);
+    if (hasComboForSection) {
+        specialChildren.push({ id: "__custom_combo", label: "自定组合", groupLabel: "特殊范围", isSpecial: true });
+    }
+    const favoriteCount = Array.isArray(favoritesData?.[section]?.items) ? favoritesData[section].items.length : 0;
+    specialChildren[0].label = favoriteCount ? `我的最愛 (${favoriteCount})` : "我的最愛";
+
     const staticGroups = getTaxonomyGroups(section).map(group => ({
         id: group.id,
         label: group.label,
@@ -83,8 +103,7 @@ async function getScopeGroups(section) {
         })),
     })).filter(group => group.children.length);
 
-    const data = await loadCustomHubData();
-    const customCategories = data?.categories?.[section];
+    const customCategories = customData?.categories?.[section];
     if (Array.isArray(customCategories) && customCategories.length) {
         staticGroups.push({
             id: "custom",
@@ -100,7 +119,14 @@ async function getScopeGroups(section) {
         });
     }
 
-    return staticGroups;
+    return [
+        {
+            id: "special",
+            label: "特殊范围",
+            children: specialChildren,
+        },
+        ...staticGroups,
+    ];
 }
 
 function createEl(tag, className, text) {

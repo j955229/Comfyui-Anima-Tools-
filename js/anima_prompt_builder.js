@@ -1,5 +1,5 @@
 import { app } from "../../scripts/app.js";
-import { SELECTOR_RANDOM_PROPERTY } from "./anima_selector_random.js";
+import { SELECTOR_RANDOM_PROPERTY, syncSelectorTagsFromExecution } from "./anima_selector_random.js";
 import { openAnimaHub } from "./anima_hub.js";
 import { openRandomScopePopover, randomScopeSummary, styleScopeButton } from "./anima_random_scope.js";
 
@@ -62,6 +62,14 @@ app.registerExtension({
                 return result;
             };
         }
+
+        const origOnExecuted = nodeType.prototype.onExecuted;
+        nodeType.prototype.onExecuted = function (message) {
+            const result = origOnExecuted?.apply(this, arguments);
+            syncSelectorTagsFromExecution(this, message);
+            this._animaPromptBuilderPanelWidget?.__animaPromptBuilderRefresh?.();
+            return result;
+        };
     },
 });
 

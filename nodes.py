@@ -685,15 +685,22 @@ class AnimaCharacterSpec:
     CATEGORY = "AnimaArt/Prompt Builder"
 
     def generate_char_block(self, name, appearance=None, clothes=None, expression=None, action=None):
+        selector_tags = {
+            "name": name or "",
+            "appearance": appearance or "",
+            "clothes": clothes or "",
+            "expression": expression or "",
+            "action": action or "",
+        }
         if not name or not str(name).strip():
-            return ("",)
+            return {"ui": {"anima_selector_tags": [selector_tags]}, "result": ("",)}
         parts = [name, appearance, clothes, expression, action]
         cleaned = []
         for part in parts:
             text = _anima_clean_prompt_tags(part)
             if text:
                 cleaned.append(text)
-        return (", ".join(cleaned),)
+        return {"ui": {"anima_selector_tags": [selector_tags]}, "result": (", ".join(cleaned),)}
 
 class AnimaSceneCollector:
     @classmethod
@@ -712,6 +719,11 @@ class AnimaSceneCollector:
     CATEGORY = "AnimaArt/Prompt Builder"
 
     def collect_scene(self, background, lighting, composition):
+        selector_tags = {
+            "background": background or "",
+            "lighting": lighting or "",
+            "composition": composition or "",
+        }
         formatted_lines = []
         background_cleaned = _anima_clean_prompt_tags(background)
         if background_cleaned:
@@ -725,7 +737,7 @@ class AnimaSceneCollector:
         if composition_cleaned:
             formatted_lines.append(f"composition: {composition_cleaned}")
 
-        return ("\n\n".join(formatted_lines),)
+        return {"ui": {"anima_selector_tags": [selector_tags]}, "result": ("\n\n".join(formatted_lines),)}
 
 class AnimaFinalAssembler:
     @classmethod
@@ -760,6 +772,9 @@ class AnimaFinalAssembler:
         return [f"character{number}: {all_chars[number]}" for number in sorted(all_chars.keys())]
 
     def assemble_final(self, scene, tags, lora_trigger, artist, character1=None, **kwargs):
+        selector_tags = {
+            "artist": artist or "",
+        }
         content_lines = self._character_lines(character1, **kwargs)
         scene_cleaned = str(scene or "").strip()
         if scene_cleaned:
@@ -786,7 +801,7 @@ class AnimaFinalAssembler:
         if prompt_string:
             prompt_string = f"{prompt_string}\n\n"
 
-        return (prompt_string, content_string)
+        return {"ui": {"anima_selector_tags": [selector_tags]}, "result": (prompt_string, content_string)}
 
 class AnimaPromptPlus:
     @classmethod
@@ -1476,6 +1491,8 @@ except ImportError:
 
 SELECTOR_RANDOM_PROPERTY = "anima_selector_random"
 SELECTOR_RANDOM_SCOPE_PROPERTY = "anima_selector_random_scope"
+RANDOM_SCOPE_FAVORITES = "__favorites"
+RANDOM_SCOPE_CUSTOM_COMBO = "__custom_combo"
 
 SELECTOR_RANDOM_INPUTS = {
     "AnimaArtistTagSelector": {"artist": "artist_tags"},
@@ -1755,6 +1772,17 @@ def _filter_random_base_items(section, rows, scope_ids):
         if any(_item_matches_random_category(section, item, category_id) for category_id in requested_static_ids)
     ]
 
+def _load_random_favorite_items(section, scope_ids):
+    if RANDOM_SCOPE_FAVORITES not in scope_ids:
+        return []
+    try:
+        data = load_favorites_data()
+        rows = data.get(section, {}).get("items", [])
+    except Exception as e:
+        print(f"[Anima Tools] Failed to read favorite random items for {section}: {e}")
+        return []
+    return [item for item in rows if isinstance(item, dict)]
+
 def _custom_card_matches_scope(card, scope_ids):
     taxonomy_ids = card.get("taxonomyIds")
     if not isinstance(taxonomy_ids, list):
@@ -1774,6 +1802,36 @@ def _load_random_custom_cards(section, scope_ids):
         card for card in rows
         if isinstance(card, dict) and _custom_card_matches_scope(card, scope_ids)
     ]
+
+def _load_random_combo_cards(section, scope_ids):
+    if RANDOM_SCOPE_CUSTOM_COMBO not in scope_ids:
+        return []
+    try:
+        data = load_custom_hub_data()
+        rows = data.get("cards", {}).get("custom_combo", [])
+    except Exception as e:
+        print(f"[Anima Tools] Failed to read custom combo random cards for {section}: {e}")
+        return []
+    combo_rows = []
+    for card in rows:
+        if not isinstance(card, dict):
+            continue
+        section_prompts = card.get("sectionPrompts")
+        if not isinstance(section_prompts, dict):
+            continue
+        prompt = str(section_prompts.get(section) or "").strip()
+        if not prompt:
+            continue
+        combo_rows.append({
+            "id": card.get("id"),
+            "source": "custom_combo",
+            "isCustom": True,
+            "name": card.get("name") or "自定组合",
+            "trigger": prompt,
+            "tags": prompt,
+            "preview": card.get("preview") or "",
+        })
+    return combo_rows
 
 def _custom_random_entry(composer, section, item):
     item_id = str(item.get("id") or item.get("hubKey") or "").strip()
@@ -1863,6 +1921,8 @@ def _selector_random_text(composer, section, scope_ids=None):
     rows = _load_random_js_rows(filename)
     rows = _filter_random_base_items(section, rows, scope_ids)
     rows = rows + _load_random_custom_cards(section, scope_ids)
+    rows = rows + _load_random_favorite_items(section, scope_ids)
+    rows = rows + _load_random_combo_cards(section, scope_ids)
     if not rows:
         return "", []
 
@@ -1993,30 +2053,11 @@ FAVORITE_SECTIONS = ["artist", "character", "lora", "clothing", "background", "p
 
 def get_default_favorites_data():
     return {
-        "artist": {
+        section: {
             "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
-        },
-        "character": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
-        },
-        "lora": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
-        },
-        "clothing": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
-        },
-        "background": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
-        },
-        "pose": {
-            "groups": [{"id": "default", "name": "默认收藏", "isSystem": True}],
-            "items": []
+            "items": [],
         }
+        for section in FAVORITE_SECTIONS
     }
 
 def normalize_favorites_data(data):

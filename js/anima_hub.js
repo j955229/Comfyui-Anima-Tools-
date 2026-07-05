@@ -710,7 +710,7 @@ function applyCharacterSearch(root, query) {
 }
 
 function sectionUsesTaxonomy(section) {
-    return getTaxonomyCategories(section).length > 0 || getCustomCategories(section).length > 0;
+    return SECTIONS.some(item => item.id === section);
 }
 
 function getActiveTaxonomy(section) {
@@ -2229,15 +2229,28 @@ function renderTaxonomyBar(root, section, rows) {
     const activeId = getActiveTaxonomy(section);
     const counts = getHubTaxonomyCounts(section, rows);
 
-    const allButton = createEl("button", activeId === "all" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "全部");
+    const allButton = createEl("button", HUB_STATE.viewMode === "all" && activeId === "all" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "全部");
     allButton.type = "button";
     allButton.onclick = () => {
+        HUB_STATE.viewMode = "all";
         HUB_STATE.taxonomy[section] = "all";
         resetVisibleLimit(section);
         renderHub(root);
     };
     allButton.appendChild(createEl("span", "anima-hub-taxonomy-count", rows.length.toLocaleString()));
     bar.appendChild(allButton);
+
+    const favoriteCount = getFavoritesMap(section).size;
+    const favoriteButton = createEl("button", HUB_STATE.viewMode === "favorites" ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", "我的最愛");
+    favoriteButton.type = "button";
+    favoriteButton.onclick = () => {
+        HUB_STATE.viewMode = "favorites";
+        HUB_STATE.taxonomy[section] = "all";
+        resetVisibleLimit(section);
+        renderHub(root);
+    };
+    favoriteButton.appendChild(createEl("span", "anima-hub-taxonomy-count", favoriteCount.toLocaleString()));
+    bar.appendChild(favoriteButton);
 
     const groups = [...getTaxonomyGroups(section)];
     const customCategories = getCustomCategories(section);
@@ -2260,10 +2273,11 @@ function renderTaxonomyBar(root, section, rows) {
         const options = createEl("div", "anima-hub-taxonomy-options");
         (group.children || []).forEach(category => {
             const count = counts.get(category.id) || 0;
-            const button = createEl("button", activeId === category.id ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", category.label);
+            const button = createEl("button", HUB_STATE.viewMode === "all" && activeId === category.id ? "anima-hub-taxonomy-chip active" : "anima-hub-taxonomy-chip", category.label);
             button.type = "button";
             button.disabled = count === 0;
             button.onclick = () => {
+                HUB_STATE.viewMode = "all";
                 HUB_STATE.taxonomy[section] = category.id;
                 resetVisibleLimit(section);
                 renderHub(root);
@@ -2621,8 +2635,10 @@ function renderHub(root) {
         sourceStatus.textContent = getSourceStatusForSection(section);
     }
 
+    const sectionData = getSectionData(section);
+    renderTaxonomyBar(root, section, sectionData);
+
     const allData = getVisibleData(section);
-    renderTaxonomyBar(root, section, allData);
 
     const selectedMap = HUB_STATE.selected[section];
     const favoriteMap = getFavoritesMap(section);
@@ -2868,14 +2884,6 @@ function createHub(section, preferredNode) {
         resetVisibleLimit(HUB_STATE.activeSection);
         renderHub(root);
     };
-    const favoritesView = createEl("button", "anima-hub-pill", "Favorites");
-    favoritesView.type = "button";
-    favoritesView.dataset.view = "favorites";
-    favoritesView.onclick = () => {
-        HUB_STATE.viewMode = "favorites";
-        resetVisibleLimit(HUB_STATE.activeSection);
-        renderHub(root);
-    };
     const selectedView = createEl("button", "anima-hub-pill", "Selected 0");
     selectedView.type = "button";
     selectedView.dataset.view = "selected";
@@ -2885,7 +2893,6 @@ function createHub(section, preferredNode) {
         renderHub(root);
     };
     view.appendChild(allView);
-    view.appendChild(favoritesView);
     view.appendChild(selectedView);
 
     const customTools = createEl("div", "anima-hub-custom-tools");
