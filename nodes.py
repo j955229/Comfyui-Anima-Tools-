@@ -680,7 +680,7 @@ class AnimaCharacterSpec:
         }
 
     RETURN_TYPES = ("CHARACTER_PROMPT",)
-    RETURN_NAMES = ("char_prompt",)
+    RETURN_NAMES = ("Character",)
     FUNCTION = "generate_char_block"
     CATEGORY = "AnimaArt/Prompt Builder"
 
@@ -703,32 +703,16 @@ class AnimaSceneCollector:
                 "background": ("STRING", {"multiline": True, "default": ""}),
                 "lighting": ("STRING", {"multiline": True, "default": ""}),
                 "composition": ("STRING", {"multiline": True, "default": ""}),
-            },
-            "optional": {
-                "character1": ("CHARACTER_PROMPT",),
             }
         }
 
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("char_bg_comp_string",)
+    RETURN_NAMES = ("scene",)
     FUNCTION = "collect_scene"
     CATEGORY = "AnimaArt/Prompt Builder"
 
-    def collect_scene(self, background, lighting, composition, character1=None, **kwargs):
+    def collect_scene(self, background, lighting, composition):
         formatted_lines = []
-        all_chars = {}
-        if character1 and str(character1).strip():
-            all_chars[1] = str(character1).strip()
-        for key, value in kwargs.items():
-            if key.startswith("character") and value and str(value).strip():
-                try:
-                    all_chars[int(key.replace("character", ""))] = str(value).strip()
-                except ValueError:
-                    pass
-
-        for number in sorted(all_chars.keys()):
-            formatted_lines.append(f"character{number}: {all_chars[number]}")
-
         background_cleaned = _anima_clean_prompt_tags(background)
         if background_cleaned:
             formatted_lines.append(f"background: {background_cleaned}")
@@ -748,154 +732,41 @@ class AnimaFinalAssembler:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "natural_language": ("STRING", {"multiline": True, "default": ""}),
+                "scene": ("STRING", {"forceInput": True}),
+                "tags": ("STRING", {"multiline": True, "default": "masterpiece, very aesthetic, absurdres, best quality, year 2025, newest, safe, 1girl, solo"}),
+                "lora_trigger": ("STRING", {"multiline": True, "default": ""}),
+                "artist": ("STRING", {"multiline": True, "default": ""}),
             },
             "optional": {
-                "prompt_base": ("STRING", {"forceInput": True}),
-                "prompt_parts": ("STRING", {"forceInput": True}),
-                "tags": ("STRING", {"forceInput": True}),
-                "lora_trigger": ("STRING", {"forceInput": True}),
-                "artist": ("STRING", {"forceInput": True}),
-                "char_bg_comp_string": ("STRING", {"forceInput": True}),
+                "character1": ("CHARACTER_PROMPT",),
             },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("prompt_string",)
+    RETURN_TYPES = ("STRING", "STRING")
+    RETURN_NAMES = ("prompt_string", "content_string")
     FUNCTION = "assemble_final"
     CATEGORY = "AnimaArt/Prompt Builder"
 
-    def _parse_prompt_parts(self, prompt_parts):
-        if not prompt_parts or not str(prompt_parts).strip():
-            return {}
-        try:
-            data = json.loads(str(prompt_parts))
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
+    def _character_lines(self, character1=None, **kwargs):
+        all_chars = {}
+        if character1 and str(character1).strip():
+            all_chars[1] = str(character1).strip()
+        for key, value in kwargs.items():
+            if key.startswith("character") and value and str(value).strip():
+                try:
+                    all_chars[int(key.replace("character", ""))] = str(value).strip()
+                except ValueError:
+                    pass
+        return [f"character{number}: {all_chars[number]}" for number in sorted(all_chars.keys())]
 
-    def _base_from_fields(self, tags="", lora_trigger="", artist="", char_bg_comp_string=""):
-        formatted_lines = []
-        tags_cleaned = _anima_clean_prompt_tags(tags)
-        if tags_cleaned:
-            formatted_lines.append(f"tags: {tags_cleaned}")
+    def assemble_final(self, scene, tags, lora_trigger, artist, character1=None, **kwargs):
+        content_lines = self._character_lines(character1, **kwargs)
+        scene_cleaned = str(scene or "").strip()
+        if scene_cleaned:
+            content_lines.append(scene_cleaned)
+        content_string = "\n\n".join(content_lines)
 
-        lora_cleaned = _anima_clean_prompt_tags(lora_trigger)
-        if lora_cleaned:
-            formatted_lines.append(lora_cleaned)
-
-        artist_cleaned = _anima_clean_prompt_tags(artist)
-        if artist_cleaned:
-            formatted_lines.append(artist_cleaned)
-
-        context_cleaned = str(char_bg_comp_string or "").strip()
-        if context_cleaned:
-            formatted_lines.append(context_cleaned)
-
-        return "\n\n".join(formatted_lines)
-
-    def _base_from_prompt_parts(self, prompt_parts):
-        parts = self._parse_prompt_parts(prompt_parts)
-        if not parts:
-            return ""
-        return self._base_from_fields(
-            parts.get("tags", ""),
-            parts.get("lora_trigger", ""),
-            parts.get("artist", ""),
-            parts.get("llm_context", ""),
-        )
-
-    def assemble_final(
-        self,
-        natural_language,
-        prompt_base=None,
-        prompt_parts=None,
-        tags="",
-        lora_trigger="",
-        artist="",
-        char_bg_comp_string="",
-    ):
-        base_prompt = str(prompt_base or "").strip()
-        if not base_prompt:
-            base_prompt = self._base_from_prompt_parts(prompt_parts)
-        if not base_prompt:
-            base_prompt = self._base_from_fields(tags, lora_trigger, artist, char_bg_comp_string)
-
-        formatted_lines = []
-        if base_prompt:
-            formatted_lines.append(base_prompt)
-        if natural_language and str(natural_language).strip():
-            formatted_lines.append(str(natural_language).strip())
-
-        return ("\n\n".join(formatted_lines),)
-
-class AnimaPromptWorkspace:
-    CHARACTER_SLOTS = 4
-    CHARACTER_FIELDS = ("name", "appearance", "clothes", "expression", "pose")
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        required = {
-            "tags": ("STRING", {"multiline": True, "default": "masterpiece, very aesthetic, absurdres, best quality, year 2025, newest, safe, 1girl, solo"}),
-            "lora_trigger": ("STRING", {"multiline": True, "default": ""}),
-            "artist": ("STRING", {"multiline": True, "default": ""}),
-            "character_count": ("INT", {"default": 1, "min": 1, "max": cls.CHARACTER_SLOTS, "step": 1}),
-            "active_character": ("INT", {"default": 1, "min": 1, "max": cls.CHARACTER_SLOTS, "step": 1}),
-        }
-        for index in range(1, cls.CHARACTER_SLOTS + 1):
-            for field in cls.CHARACTER_FIELDS:
-                required[f"character{index}_{field}"] = ("STRING", {"multiline": True, "default": ""})
-        required.update({
-            "background": ("STRING", {"multiline": True, "default": ""}),
-            "lighting": ("STRING", {"multiline": True, "default": ""}),
-            "composition": ("STRING", {"multiline": True, "default": ""}),
-        })
-        return {"required": required}
-
-    RETURN_TYPES = ("STRING", "STRING")
-    RETURN_NAMES = ("llm_context", "prompt_base")
-    FUNCTION = "build_workspace"
-    CATEGORY = "AnimaArt/Prompt Builder"
-
-    def _slot_count(self, value):
-        try:
-            return max(1, min(self.CHARACTER_SLOTS, int(value)))
-        except Exception:
-            return 1
-
-    def _character_line(self, values):
-        cleaned = []
-        for field in self.CHARACTER_FIELDS:
-            text = _anima_clean_prompt_tags(values.get(field, ""))
-            if text:
-                cleaned.append(text)
-        return ", ".join(cleaned)
-
-    def build_workspace(self, tags, lora_trigger, artist, character_count, active_character, background, lighting, composition, **kwargs):
-        llm_lines = []
-        count = self._slot_count(character_count)
-
-        for index in range(1, count + 1):
-            values = {field: kwargs.get(f"character{index}_{field}", "") for field in self.CHARACTER_FIELDS}
-            line = self._character_line(values)
-            if line:
-                llm_lines.append(f"character{index}: {line}")
-
-        background_cleaned = _anima_clean_prompt_tags(background)
-        if background_cleaned:
-            llm_lines.append(f"background: {background_cleaned}")
-
-        lighting_cleaned = _anima_clean_prompt_tags(lighting)
-        if lighting_cleaned:
-            llm_lines.append(f"lighting: {lighting_cleaned}")
-
-        composition_cleaned = _anima_clean_prompt_tags(composition)
-        if composition_cleaned:
-            llm_lines.append(f"composition: {composition_cleaned}")
-
-        llm_context = "\n\n".join(llm_lines)
         prompt_lines = []
-
         tags_cleaned = _anima_clean_prompt_tags(tags)
         if tags_cleaned:
             prompt_lines.append(f"tags: {tags_cleaned}")
@@ -908,10 +779,10 @@ class AnimaPromptWorkspace:
         if artist_cleaned:
             prompt_lines.append(artist_cleaned)
 
-        if llm_context:
-            prompt_lines.append(llm_context)
+        if content_string:
+            prompt_lines.append(content_string)
 
-        return (llm_context, "\n\n".join(prompt_lines))
+        return ("\n\n".join(prompt_lines), content_string)
 
 class AnimaPromptPlus:
     @classmethod
@@ -1550,7 +1421,6 @@ NODE_CLASS_MAPPINGS = {
     "AnimaCharacterSpec": AnimaCharacterSpec,
     "AnimaSceneCollector": AnimaSceneCollector,
     "AnimaFinalAssembler": AnimaFinalAssembler,
-    "AnimaPromptWorkspace": AnimaPromptWorkspace,
     "AnimaPromptPlus": AnimaPromptPlus,
     "AnimaPromptComposer": AnimaPromptComposer,
     "AnimaMultiLoraLoader": AnimaMultiLoraLoader
@@ -1573,11 +1443,10 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "AnimaExpressionTagSelectorPlus": "Anima Expression Tag Selector+",
     "AnimaLightingTagSelector": "Anima Lighting Tag Selector",
     "AnimaLightingTagSelectorPlus": "Anima Lighting Tag Selector+",
-    "AnimaCharacterSpec": "Anima Character Spec (Legacy)",
-    "AnimaSceneCollector": "Anima Scene Collector (Legacy)",
-    "AnimaFinalAssembler": "Anima Final Assembler (Optional Merge)",
-    "AnimaPromptWorkspace": "Anima Prompt Workspace",
-    "AnimaPromptPlus": "Anima Prompt Plus (Legacy)",
+    "AnimaCharacterSpec": "Anima Character Spec",
+    "AnimaSceneCollector": "Anima Scene Collector",
+    "AnimaFinalAssembler": "Anima Final Assembler",
+    "AnimaPromptPlus": "Anima Prompt Plus",
     "AnimaPromptComposer": "Anima Prompt Random Draw",
     "AnimaMultiLoraLoader": "Anima Multi LoRA Loader"
 }
@@ -1627,15 +1496,19 @@ SELECTOR_RANDOM_INPUTS = {
         "pose": "pose_tags",
         "background": "background_tags",
     },
-    "AnimaPromptWorkspace": {
-        "artist": "artist",
-        "character": "__workspace_character_name",
-        "clothing": "__workspace_character_clothes",
-        "expression": "__workspace_character_expression",
-        "pose": "__workspace_character_pose",
+    "AnimaCharacterSpec": {
+        "character": "name",
+        "clothing": "clothes",
+        "expression": "expression",
+        "pose": "action",
+    },
+    "AnimaSceneCollector": {
         "background": "background",
         "lighting": "lighting",
         "composition": "composition",
+    },
+    "AnimaFinalAssembler": {
+        "artist": "artist",
     },
 }
 
@@ -1666,36 +1539,9 @@ SELECTOR_WIDGET_ORDERS = {
         "extra_prompt",
         "separator",
     ],
-    "AnimaPromptWorkspace": [
-        "tags",
-        "lora_trigger",
-        "artist",
-        "character_count",
-        "active_character",
-        "character1_name",
-        "character1_appearance",
-        "character1_clothes",
-        "character1_expression",
-        "character1_pose",
-        "character2_name",
-        "character2_appearance",
-        "character2_clothes",
-        "character2_expression",
-        "character2_pose",
-        "character3_name",
-        "character3_appearance",
-        "character3_clothes",
-        "character3_expression",
-        "character3_pose",
-        "character4_name",
-        "character4_appearance",
-        "character4_clothes",
-        "character4_expression",
-        "character4_pose",
-        "background",
-        "lighting",
-        "composition",
-    ],
+    "AnimaCharacterSpec": ["name", "appearance", "clothes", "expression", "action"],
+    "AnimaSceneCollector": ["background", "lighting", "composition"],
+    "AnimaFinalAssembler": ["tags", "lora_trigger", "artist"],
 }
 
 def _selector_random_state(workflow_node):
@@ -1733,44 +1579,7 @@ def _set_selector_workflow_widget_value(workflow_node, class_type, input_name, v
         widgets_values.append("")
     widgets_values[index] = value
 
-def _workspace_active_character(inputs, workflow_node):
-    value = None
-    if isinstance(inputs, dict):
-        value = inputs.get("active_character")
-    if value is None and isinstance(workflow_node, dict):
-        widgets_values = workflow_node.get("widgets_values")
-        order = SELECTOR_WIDGET_ORDERS.get("AnimaPromptWorkspace") or []
-        if isinstance(widgets_values, dict):
-            value = widgets_values.get("active_character")
-        elif isinstance(widgets_values, list) and "active_character" in order:
-            index = order.index("active_character")
-            if index < len(widgets_values):
-                value = widgets_values[index]
-    try:
-        return max(1, min(4, int(value)))
-    except Exception:
-        return 1
-
-def _workspace_random_input_name(section, inputs, workflow_node):
-    active = _workspace_active_character(inputs, workflow_node)
-    field_map = {
-        "character": "name",
-        "clothing": "clothes",
-        "expression": "expression",
-        "pose": "pose",
-    }
-    if section in field_map:
-        return f"character{active}_{field_map[section]}"
-    return {
-        "artist": "artist",
-        "background": "background",
-        "lighting": "lighting",
-        "composition": "composition",
-    }.get(section)
-
 def _resolve_selector_input_name(class_type, section, configured_input_name, inputs, workflow_node):
-    if class_type == "AnimaPromptWorkspace":
-        return _workspace_random_input_name(section, inputs, workflow_node)
     return configured_input_name
 
 ANIMA_DETAIL_DATA_FILES = {
