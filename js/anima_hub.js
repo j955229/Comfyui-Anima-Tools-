@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 import { applyTagsToTarget } from "./anima_apply_tags.js";
-import { ANIMA_SECTION_WIDGETS, getTargetById, resolveAnimaTargets } from "./anima_target_resolver.js";
+import { ANIMA_SECTION_WIDGETS, getTargetById, isAnimaPromptWorkspaceNode, resolveAnimaTargets } from "./anima_target_resolver.js";
 import { ARTIST_SOURCES, getActiveArtistSource, getArtistDataForSource, getArtistSourceStatus, setActiveArtistSource } from "./anima_artist_sources.js";
 import { CHARACTER_SOURCES, getActiveCharacterSource, getCharacterDataForSource, getCharacterSourceStatus, hasMoreCharacterDataForSource, loadMoreCharacterDataForSource, setActiveCharacterSource } from "./anima_character_sources.js";
 import { getTaxonomyCategories, getTaxonomyGroups, itemMatchesTaxonomy } from "./anima_taxonomy.js";
@@ -2523,6 +2523,23 @@ function closeHub() {
 
 async function applyCurrentSelection(root) {
     const activeSection = HUB_STATE.activeSection;
+    if (isAnimaPromptWorkspaceNode(HUB_STATE.preferredNode)) {
+        let applied = 0;
+        for (const section of SECTIONS.map(item => item.id)) {
+            if (HUB_STATE.selected[section].size === 0) continue;
+            const prompt = await formatSelectedPrompt(section);
+            const targetInfo = getTargetById(section, HUB_STATE.targetIds[section], HUB_STATE.preferredNode);
+            if (!targetInfo) continue;
+            if (applyTagsToTarget(targetInfo, prompt)) {
+                targetInfo.node?.__animaWorkspaceRefresh?.();
+                applied += 1;
+            }
+        }
+        closeHub();
+        if (!applied) return;
+        return;
+    }
+
     if (HUB_STATE.selected[activeSection].size === 0) {
         closeHub();
         return;
